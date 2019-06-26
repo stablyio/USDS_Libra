@@ -12,7 +12,7 @@ use crypto::signing::KeyPair;
 use failure::prelude::*;
 use std::path::{Path, PathBuf};
 use tempfile;
-use vm_genesis::default_config;
+use vm_genesis::{default_config, open_config};
 
 pub struct SwarmConfig {
     configs: Vec<(PathBuf, NodeConfig)>,
@@ -79,7 +79,7 @@ impl SwarmConfig {
             config.network.listen_address = addrs[0].clone();
             config.network.advertised_address = addrs[0].clone();
 
-            config.vm_config = default_config();
+            config.vm_config = open_config();
             configs.push(config);
         }
         if prune_seed_peers_for_discovery {

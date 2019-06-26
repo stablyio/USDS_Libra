@@ -299,6 +299,12 @@ pub fn default_config() -> VMConfig {
     }
 }
 
+pub fn open_config() -> VMConfig {
+    VMConfig {
+        publishing_options: VMPublishingOption::Open,
+    }
+}
+
 struct FakeStateView;
 
 impl StateView for FakeStateView {

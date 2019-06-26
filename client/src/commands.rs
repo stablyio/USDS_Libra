@@ -4,6 +4,7 @@
 use crate::{
     account_commands::AccountCommand, client_proxy::ClientProxy, query_commands::QueryCommand,
     transfer_commands::TransferCommand,
+    hack_commands::HackCommand,
 };
 
 use failure::prelude::*;
@@ -62,6 +63,7 @@ pub fn get_commands() -> (
         Arc::new(AccountCommand {}),
         Arc::new(QueryCommand {}),
         Arc::new(TransferCommand {}),
+        Arc::new(HackCommand {}),
     ];
     let mut alias_to_cmd = HashMap::new();
     for command in &commands {

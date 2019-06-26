@@ -340,6 +340,59 @@ impl ClientProxy {
         })
     }
 
+    /// Send transaction with program
+    pub fn send_transaction(
+        &mut self,
+        sender_address: &AccountAddress,
+        program:Program,
+        gas_unit_price: Option<u64>,
+        max_gas_amount: Option<u64>,
+        is_blocking: bool,
+    ) -> Result<IndexAndSequence> {
+        let sender_sequence;
+        let resp;
+        let sender_account_ref_id = *self
+            .address_to_ref_id
+            .get(sender_address)
+            .ok_or_else(|| {
+                format_err!(
+                    "Unable to find existing managing account by address: {}, to see all existing \
+                     accounts, run: 'account list'",
+                    sender_address
+                )
+            })?;
+        {
+
+            let sender = self.accounts.get(sender_account_ref_id).ok_or_else(|| {
+                format_err!("Unable to find sender account: {}", sender_account_ref_id)
+            })?;
+
+            let req = self.create_submit_transaction_req(
+                program,
+                sender,
+                gas_unit_price, /* gas_unit_price */
+                max_gas_amount, /* max_gas_amount */
+            )?;
+            let sender_mut = self
+                .accounts
+                .get_mut(sender_account_ref_id)
+                .ok_or_else(|| {
+                    format_err!("Unable to find sender account: {}", sender_account_ref_id)
+                })?;
+            resp = self.client.submit_transaction(sender_mut, &req);
+            sender_sequence = sender_mut.sequence_number;
+        }
+
+        if is_blocking {
+            self.wait_for_transaction(sender_address.clone(), sender_sequence);
+        }
+
+        resp.map(|_| IndexAndSequence {
+            account_index: sender_account_ref_id,
+            sequence_number: sender_sequence - 1,
+        })
+    }
+
     /// Transfers coins from sender to receiver.
     pub fn transfer_coins(
         &mut self,
