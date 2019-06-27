@@ -23,6 +23,7 @@ rust_decimal = "1.0.1"
 num-traits = "0.2"
 serde = { version = "1.0.89", features = ["derive"] }
 structopt = "0.2.15"
+lazy_static = "1.3.0"
 
 admission_control_proto = { version = "0.1.0", path = "../admission_control/admission_control_proto" }
 config = { path = "../config" }
@@ -38,6 +39,7 @@ types = { path = "../types" }
 vm_genesis = { path = "../language/vm/vm_genesis" }
 compiler = { path = "../language/compiler"}
 vm = { path = "../language/vm"}
+canonical_serialization = {path = "../common/canonical_serialization"}
 
 [dev-dependencies]
 tempfile = "3.0.6"

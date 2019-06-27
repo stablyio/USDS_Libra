@@ -1,0 +1,6 @@
+import ${etoken_address}.EToken;
+import ${etoken_address}.ETokenCapability;
+main (order_address: address) {
+  Etoken.buy_token(move(order_address));
+  return;
+}

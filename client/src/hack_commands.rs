@@ -1,16 +1,19 @@
 // Copyright (c) The Libra Core Contributors
 // SPDX-License-Identifier: Apache-2.0
 
+use core::borrow::Borrow;
 use std::collections::BTreeMap;
 use std::convert::TryFrom;
 use std::fs;
 use std::path::Path;
 
+use compiler::compiler::compile_program;
 use failure::prelude::*;
+use lazy_static::lazy_static;
+use types::account_address::AccountAddress;
 use types::account_config::get_account_resource_or_default;
-use types::transaction::Program;
+use types::transaction::{Program, TransactionArgument};
 use vm::file_format::CompiledProgram;
-use vm_genesis::get_transaction_name;
 
 use crate::{client_proxy::ClientProxy, commands::*};
 
@@ -28,13 +31,32 @@ impl Command for HackCommand {
         let commands: Vec<Box<dyn Command>> = vec![
             Box::new(HackCommandPublishModule {}),
             Box::new(HackCommandGetLatestAccountState {}),
+            Box::new(HackCommandETokenIssue {}),
+            Box::new(HackCommandETokenInit {}),
+            Box::new(HackCommandETokenMint {}),
+            Box::new(HackCommandETokenTransfer {}),
+            Box::new(HackCommandETokenSell {}),
+            Box::new(HackCommandETokenBuy {}),
         ];
 
         subcommand_execute(&params[0], commands, client, &params[1..]);
     }
 }
 
-/// Sub commands to query balance for the account specified.
+lazy_static! {
+    pub static ref ETOKEN_TXN_BODY: compiler::parser::ast::Program = {
+        let txn_body = include_str!("../move/eToken.mvir");
+        compiler::parser::parse_program(txn_body).unwrap()
+    };
+
+    pub static ref ETOKEN_INIT_TEMPLATE: String = {include_str!("../move/init.mvir").to_string()};
+    pub static ref ETOKEN_MINT_TEMPLATE: String = {include_str!("../move/mint.mvir").to_string()};
+    pub static ref ETOKEN_TRANSFER_TEMPLATE: String = {include_str!("../move/peer_to_peer_transfer.mvir").to_string()};
+    pub static ref ETOKEN_SELL_TEMPLATE: String = {include_str!("../move/sell.mvir").to_string()};
+    pub static ref ETOKEN_BUY_TEMPLATE: String = {include_str!("../move/buy.mvir").to_string()};
+}
+
+
 pub struct HackCommandPublishModule {}
 
 impl Command for HackCommandPublishModule {
@@ -42,14 +64,14 @@ impl Command for HackCommandPublishModule {
         vec!["publish", "pub"]
     }
     fn get_params_help(&self) -> &'static str {
-        "<module_path>"
+        "<account_ref_id> <module_path>"
     }
     fn get_description(&self) -> &'static str {
         "Publish module to an account"
     }
     fn execute(&self, client: &mut ClientProxy, params: &[&str]) {
         if params.len() != 3 {
-            println!("Invalid number of arguments for publish module");
+            println!("Invalid number of arguments for command");
             return;
         }
         let address = match client.get_account_address_from_parameter(params[1]) {
@@ -78,7 +100,7 @@ impl Command for HackCommandPublishModule {
 
         let dependencies = compiler::util::build_stdlib();
 
-        let compiled_program = match compiler::compiler::compile_program(&address, &parsed_program, &dependencies) {
+        let compiled_program = match compile_program(&address, &parsed_program, &dependencies) {
             Ok(p) => p,
             Err(e) => {
                 report_error("compile program fail.", e);
@@ -87,7 +109,7 @@ impl Command for HackCommandPublishModule {
         };
         let is_blocking = true;
         println!("{}", compiled_program);
-        let program = match create_transaction_program(&compiled_program) {
+        let program = match create_transaction_program(&compiled_program, vec![]) {
             Ok(p) => p,
             Err(e) => {
                 report_error("create transaction program fail.", e);
@@ -112,7 +134,333 @@ impl Command for HackCommandPublishModule {
     }
 }
 
-fn create_transaction_program(program: &CompiledProgram) -> Result<Program> {
+pub struct HackCommandETokenIssue {}
+
+impl Command for HackCommandETokenIssue {
+    fn get_aliases(&self) -> Vec<&'static str> {
+        vec!["etoken_issue", "issue"]
+    }
+    fn get_params_help(&self) -> &'static str {
+        "<account_ref_id>"
+    }
+    fn get_description(&self) -> &'static str {
+        "Issue EToken to an account"
+    }
+    fn execute(&self, client: &mut ClientProxy, params: &[&str]) {
+        if params.len() != 2 {
+            println!("Invalid number of arguments for command");
+            return;
+        }
+        let address = match client.get_account_address_from_parameter(params[1]) {
+            Ok(address) => address,
+            Err(e) => {
+                report_error("get address fail.", e);
+                return;
+            }
+        };
+
+        let dependencies = compiler::util::build_stdlib();
+
+        let compiled_program = match compile_program(&address, &ETOKEN_TXN_BODY, &dependencies) {
+            Ok(p) => p,
+            Err(e) => {
+                report_error("compile program fail.", e);
+                return;
+            }
+        };
+        let is_blocking = true;
+        println!("{}", compiled_program);
+        let program = match create_transaction_program(&compiled_program, vec![]) {
+            Ok(p) => p,
+            Err(e) => {
+                report_error("create transaction program fail.", e);
+                return;
+            }
+        };
+        match client.send_transaction(&address, program, None, None, is_blocking) {
+            Ok(index_and_seq) => {
+                if is_blocking {
+                    println!("Finished transaction!");
+                } else {
+                    println!("Transaction submitted to validator");
+                }
+                println!(
+                    "To query for transaction status, run: query txn_acc_seq {} {} \
+                     <fetch_events=true|false>",
+                    index_and_seq.account_index, index_and_seq.sequence_number
+                );
+                client.etoken_account = Some(address.clone());
+                client.etoken_program = Some(compiled_program);
+            }
+            Err(e) => report_error("Failed to perform transaction", e),
+        }
+    }
+}
+
+// Init an account for accept etoken
+pub struct HackCommandETokenInit {}
+
+impl Command for HackCommandETokenInit {
+    fn get_aliases(&self) -> Vec<&'static str> {
+        vec!["etoken_init", "init"]
+    }
+    fn get_params_help(&self) -> &'static str {
+        "<account_ref_id>"
+    }
+    fn get_description(&self) -> &'static str {
+        "Init the account for accept EToken"
+    }
+    fn execute(&self, client: &mut ClientProxy, params: &[&str]) {
+        if params.len() != 2 {
+            println!("Invalid number of arguments for command");
+            return;
+        }
+        if client.etoken_account.is_none() {
+            println!("Please issue etoken first.");
+            return;
+        }
+        let address = match client.get_account_address_from_parameter(params[1]) {
+            Ok(address) => address,
+            Err(e) => {
+                report_error("get address fail.", e);
+                return;
+            }
+        };
+        execute_script(client, &address,&ETOKEN_INIT_TEMPLATE, vec![]);
+    }
+}
+
+// Mint etoken for an account
+pub struct HackCommandETokenMint {}
+
+impl Command for HackCommandETokenMint {
+    fn get_aliases(&self) -> Vec<&'static str> {
+        vec!["etoken_mint", "mint"]
+    }
+    fn get_params_help(&self) -> &'static str {
+        "<account_ref_id> <amount>"
+    }
+    fn get_description(&self) -> &'static str {
+        "Mint etoken for an account"
+    }
+    fn execute(&self, client: &mut ClientProxy, params: &[&str]) {
+        if params.len() != 3 {
+            println!("Invalid number of arguments for command");
+            return;
+        }
+        if client.etoken_account.is_none() {
+            println!("Please issue etoken first.");
+            return;
+        }
+        let address = match client.get_account_address_from_parameter(params[1]) {
+            Ok(address) => address,
+            Err(e) => {
+                report_error("get address fail.", e);
+                return;
+            }
+        };
+        let amount = match params[2].parse::<u64>(){
+            Ok(i) => i,
+            Err(e) => {
+                report_error("invalid amount", e.into());
+                return;
+            }
+        };
+        execute_script(client, &address,&ETOKEN_MINT_TEMPLATE, vec![TransactionArgument::U64(amount)]);
+    }
+}
+
+
+// Transfer etoken to an account
+pub struct HackCommandETokenTransfer {}
+
+impl Command for HackCommandETokenTransfer {
+    fn get_aliases(&self) -> Vec<&'static str> {
+        vec!["etoken_transfer", "transfer"]
+    }
+    fn get_params_help(&self) -> &'static str {
+        "<account_ref_id>|<account_address> <account_ref_id>|<account_address> <amount>"
+    }
+    fn get_description(&self) -> &'static str {
+        "Transfer etoken to an account"
+    }
+    fn execute(&self, client: &mut ClientProxy, params: &[&str]) {
+        if params.len() != 4 {
+            println!("Invalid number of arguments for command");
+            return;
+        }
+        if client.etoken_account.is_none() {
+            println!("Please issue etoken first.");
+            return;
+        }
+        let address = match client.get_account_address_from_parameter(params[1]) {
+            Ok(address) => address,
+            Err(e) => {
+                report_error("get address fail.", e);
+                return;
+            }
+        };
+        let payee_address = match client.get_account_address_from_parameter(params[2]) {
+            Ok(address) => address,
+            Err(e) => {
+                report_error("get address fail.", e);
+                return;
+            }
+        };
+        let amount = match params[3].parse::<u64>(){
+            Ok(i) => i,
+            Err(e) => {
+                report_error("invalid amount", e.into());
+                return;
+            }
+        };
+        execute_script(client, &address,&ETOKEN_TRANSFER_TEMPLATE, vec![TransactionArgument::Address(payee_address),TransactionArgument::U64(amount)]);
+    }
+}
+
+
+// Sell etoken and create an order
+pub struct HackCommandETokenSell {}
+
+impl Command for HackCommandETokenSell {
+    fn get_aliases(&self) -> Vec<&'static str> {
+        vec!["etoken_sell", "sell"]
+    }
+    fn get_params_help(&self) -> &'static str {
+        "<account_ref_id>|<account_address> <amount> <price>"
+    }
+    fn get_description(&self) -> &'static str {
+        "Sell etoken and create an order"
+    }
+    fn execute(&self, client: &mut ClientProxy, params: &[&str]) {
+        if params.len() != 4 {
+            println!("Invalid number of arguments for command");
+            return;
+        }
+        if client.etoken_account.is_none() {
+            println!("Please issue etoken first.");
+            return;
+        }
+        let address = match client.get_account_address_from_parameter(params[1]) {
+            Ok(address) => address,
+            Err(e) => {
+                report_error("get address fail.", e);
+                return;
+            }
+        };
+        let amount = match params[2].parse::<u64>(){
+            Ok(i) => i,
+            Err(e) => {
+                report_error("invalid amount", e.into());
+                return;
+            }
+        };
+        let price = match params[3].parse::<u64>(){
+            Ok(i) => i,
+            Err(e) => {
+                report_error("invalid price", e.into());
+                return;
+            }
+        };
+        execute_script(client, &address,&ETOKEN_SELL_TEMPLATE, vec![TransactionArgument::U64(amount),TransactionArgument::U64(price)]);
+    }
+}
+
+// Buy etoken from a order address
+pub struct HackCommandETokenBuy {}
+
+impl Command for HackCommandETokenBuy {
+    fn get_aliases(&self) -> Vec<&'static str> {
+        vec!["etoken_buy", "buy"]
+    }
+    fn get_params_help(&self) -> &'static str {
+        "<account_ref_id>|<account_address> <order_account_ref_id>|<order_account_address>"
+    }
+    fn get_description(&self) -> &'static str {
+        "Buy etoken from a order address"
+    }
+    fn execute(&self, client: &mut ClientProxy, params: &[&str]) {
+        if params.len() != 3 {
+            println!("Invalid number of arguments for command");
+            return;
+        }
+        if client.etoken_account.is_none() {
+            println!("Please issue etoken first.");
+            return;
+        }
+        let address = match client.get_account_address_from_parameter(params[1]) {
+            Ok(address) => address,
+            Err(e) => {
+                report_error("get address fail.", e);
+                return;
+            }
+        };
+        let payee_address = match client.get_account_address_from_parameter(params[2]) {
+            Ok(address) => address,
+            Err(e) => {
+                report_error("get address fail.", e);
+                return;
+            }
+        };
+        execute_script(client, &address,&ETOKEN_BUY_TEMPLATE, vec![TransactionArgument::Address(payee_address)]);
+    }
+}
+
+pub fn execute_script(client: &mut ClientProxy, address: &AccountAddress, script_template:&str, args:Vec<TransactionArgument>){
+    let compiled_program = match compile_script(script_template, client, &address) {
+        Ok(p) => p,
+        Err(e) => {
+            report_error("compile program fail.", e);
+            return;
+        }
+    };
+    let is_blocking = true;
+    println!("{}", compiled_program);
+    let program = match create_transaction_program(&compiled_program, args) {
+        Ok(p) => p,
+        Err(e) => {
+            report_error("create transaction program fail.", e);
+            return;
+        }
+    };
+    match client.send_transaction(&address, program, None, None, is_blocking) {
+        Ok(index_and_seq) => {
+            if is_blocking {
+                println!("Finished transaction!");
+            } else {
+                println!("Transaction submitted to validator");
+            }
+            println!(
+                "To query for transaction status, run: query txn_acc_seq {} {} \
+                     <fetch_events=true|false>",
+                index_and_seq.account_index, index_and_seq.sequence_number
+            );
+        }
+        Err(e) => report_error("Failed to perform transaction", e),
+    }
+}
+
+pub fn compile_script(script_template: &str, client: &mut ClientProxy, address: &AccountAddress) -> Result<CompiledProgram> {
+    let mut dependencies = vec![];
+    dependencies.append(&mut compiler::util::build_stdlib());
+    client.etoken_program.clone().unwrap().modules.iter().for_each(|m| {
+        dependencies.push(m.clone());
+    });
+    let program = parse_script(script_template, &client.etoken_account.borrow().unwrap());
+    match compile_program(address, &program, &dependencies) {
+        Ok(p) => Ok(p),
+        Err(e) => Err(e)
+    }
+}
+
+pub fn parse_script(script_template: &str, etoken_address: &AccountAddress) -> compiler::parser::ast::Program {
+    let mut address_str = "0x".to_owned();
+    address_str.push_str(etoken_address.to_string().as_str());
+    let script = script_template.replace("${etoken_address}", address_str.as_str());
+    compiler::parser::parse_program(script.as_str()).unwrap()
+}
+
+fn create_transaction_program(program: &CompiledProgram, args: Vec<TransactionArgument>) -> Result<Program> {
     let mut script_blob = vec![];
     program.script.serialize(&mut script_blob)?;
 
@@ -127,11 +475,14 @@ fn create_transaction_program(program: &CompiledProgram) -> Result<Program> {
         .collect::<Result<Vec<_>>>()?;
 
     // Currently we do not support transaction arguments in functional tests.
-    Ok(Program::new(script_blob, module_blobs, vec![]))
+    Ok(Program::new(script_blob, module_blobs, args))
 }
 
 /// Command to query latest account state from validator.
 pub struct HackCommandGetLatestAccountState {}
+
+const CODE_TAG: u8 = 0;
+const RESOURCE_TAG: u8 = 1;
 
 impl Command for HackCommandGetLatestAccountState {
     fn get_aliases(&self) -> Vec<&'static str> {
@@ -148,8 +499,6 @@ impl Command for HackCommandGetLatestAccountState {
         match client.get_latest_account_state(&params) {
             Ok((acc, version)) => match get_account_resource_or_default(&acc) {
                 Ok(_) => {
-                    let blob = acc.clone().unwrap();
-                    let tree = BTreeMap::try_from(&blob).unwrap();
                     println!(
                         "Latest account state is: \n \
                      Account: {:#?}\n \
@@ -161,14 +510,54 @@ impl Command for HackCommandGetLatestAccountState {
                         acc,
                         version,
                     );
+                    let blob = match acc {
+                        Some(blob) => blob,
+                        None => {
+                            println!("Account State is None");
+                            return;
+                        }
+                    };
+                    let tree = BTreeMap::try_from(&blob).unwrap();
                     println!("AccountStateBlob Tree:");
-                    tree.iter().for_each(|(k,v)| {
-                        println!("key:{:#?}, value:{:#?}", hex::encode(k), hex::encode(v));
+                    tree.iter().map(|(k, v)| -> (String, String) {
+                        let mut key: String = "".to_owned();
+                        if k[0] == CODE_TAG {
+                            key.push_str("code_")
+                        } else if k[0] == RESOURCE_TAG {
+                            key.push_str("res_");
+                        }
+                        key.push_str(hex::encode(k).as_str());
+                        (key, hex::encode(v))
+                    }).for_each(|(k, v)| {
+                        println!("key:{:#?}, value:{:#?}", k, v);
                     })
                 }
                 Err(e) => report_error("Error converting account blob to account resource", e),
             },
             Err(e) => report_error("Error getting latest account state", e),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use types::account_address::AccountAddress;
+
+    use crate::hack_commands::*;
+
+    #[test]
+    fn test_parse_script() {
+        //println!("{:?}", AccountAddress::random());
+        //println!("{:?}",AccountAddress::default().to_string());
+        let program = parse_script(&ETOKEN_INIT_TEMPLATE, &AccountAddress::random());
+        println!("{:?}", program);
+        let program = parse_script(&ETOKEN_MINT_TEMPLATE, &AccountAddress::random());
+        println!("{:?}", program);
+        let program = parse_script(&ETOKEN_TRANSFER_TEMPLATE, &AccountAddress::random());
+        println!("{:?}", program);
+        let program = parse_script(&ETOKEN_SELL_TEMPLATE, &AccountAddress::random());
+        println!("{:?}", program);
+        let program = parse_script(&ETOKEN_BUY_TEMPLATE, &AccountAddress::random());
+        println!("{:?}", program);
     }
 }

@@ -1,0 +1,15 @@
+import ${etoken_address}.EToken;
+import ${etoken_address}.ETokenCapability;
+main(amount: u64) {
+    let sender: address;
+    let capability: &R#ETokenCapability.T;
+    let minted_tokens: R#EToken.T;
+
+    // Borrow general capability for proof of minting capability
+    capability = ETokenCapability.borrow_capability();
+
+    minted_tokens = EToken.mint(move(amount), copy(capability));
+    // Deposit the freshly minted tokens to itself
+    EToken.deposit(move(sender), move(minted_tokens), move(capability));
+    return;
+}

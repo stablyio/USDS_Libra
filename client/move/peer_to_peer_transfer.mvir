@@ -1,0 +1,6 @@
+import ${etoken_address}.EToken;
+import ${etoken_address}.ETokenCapability;
+main (payee: address, amount: u64) {
+  EToken.pay_from_sender(move(payee), move(amount));
+  return;
+}

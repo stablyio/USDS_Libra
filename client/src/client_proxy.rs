@@ -44,6 +44,7 @@ use types::{
     transaction::{Program, RawTransaction, RawTransactionBytes, SignedTransaction, Version},
     validator_verifier::ValidatorVerifier,
 };
+use vm::file_format::CompiledProgram;
 
 const CLIENT_WALLET_MNEMONIC_FILE: &str = "client.mnemonic";
 const GAS_UNIT_PRICE: u64 = 0;
@@ -91,6 +92,10 @@ pub struct ClientProxy {
     wallet: WalletLibrary,
     /// Whether to sync with validator on account creation.
     sync_on_wallet_recovery: bool,
+    /// etoken issue account
+    pub etoken_account: Option<AccountAddress>,
+    /// etoken CompiledProgram
+    pub etoken_program: Option<CompiledProgram>,
 }
 
 impl ClientProxy {
@@ -153,6 +158,8 @@ impl ClientProxy {
             faucet_account,
             wallet: Self::get_libra_wallet(mnemonic_file)?,
             sync_on_wallet_recovery,
+            etoken_account: None,
+            etoken_program: None,
         })
     }
 
