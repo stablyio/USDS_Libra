@@ -858,7 +858,8 @@ impl ClientProxy {
         Ok(())
     }
 
-    fn convert_to_micro_libras(input: &str) -> Result<u64> {
+    /// convert to micro libras
+    pub fn convert_to_micro_libras(input: &str) -> Result<u64> {
         ensure!(!input.is_empty(), "Empty input not allowed for libra unit");
         // This is not supposed to panic as it is used as constant here.
         let max_value = Decimal::from_u64(std::u64::MAX).unwrap() / Decimal::new(1_000_000, 0);

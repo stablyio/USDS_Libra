@@ -186,7 +186,7 @@ impl Command for HackCommandETokenMint {
                 return;
             }
         };
-        let amount = match params[2].parse::<u64>() {
+        let amount = match ClientProxy::convert_to_micro_libras(params[2]){
             Ok(i) => i,
             Err(e) => {
                 report_error("invalid amount", e.into());
@@ -234,7 +234,7 @@ impl Command for HackCommandETokenTransfer {
                 return;
             }
         };
-        let amount = match params[3].parse::<u64>() {
+        let amount = match ClientProxy::convert_to_micro_libras(params[3]){
             Ok(i) => i,
             Err(e) => {
                 report_error("invalid amount", e.into());
@@ -275,14 +275,14 @@ impl Command for HackCommandETokenSell {
                 return;
             }
         };
-        let amount = match params[2].parse::<u64>() {
+        let amount = match ClientProxy::convert_to_micro_libras(params[2]){
             Ok(i) => i,
             Err(e) => {
                 report_error("invalid amount", e.into());
                 return;
             }
         };
-        let price = match params[3].parse::<u64>() {
+        let price = match ClientProxy::convert_to_micro_libras(params[3]) {
             Ok(i) => i,
             Err(e) => {
                 report_error("invalid price", e.into());
@@ -350,7 +350,7 @@ pub fn handler_result(result: (CompiledProgram, IndexAndSequence)) {
 pub fn execute_script(client: &mut ClientProxy, address: &AccountAddress, script_template: &str, args: Vec<TransactionArgument>) -> Result<(CompiledProgram, IndexAndSequence)> {
     let compiled_program = compile_script(script_template, client, &address)?;
     let is_blocking = true;
-    println!("{}", compiled_program);
+    //println!("{}", compiled_program);
     let program = create_transaction_program(&compiled_program, args)?;
     let result = client.send_transaction(&address, program, None, None, is_blocking)?;
     return Ok((compiled_program.clone(), result));
@@ -409,8 +409,8 @@ impl HackCommandGetLatestAccountState {
                     let account_btree = blob.borrow().try_into()?;
                     let account_resource = AccountResource::make_from(&account_btree).unwrap_or(AccountResource::default());
                     let etoken_resource = client.etoken_account.map(|address|
-                        ETokenResource::make_from(address, &account_btree).unwrap_or_default()
-                    ).unwrap_or_default();
+                        ETokenResource::make_from(address, &account_btree)
+                    ).or(None);
 
 
                     println!(

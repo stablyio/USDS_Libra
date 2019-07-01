@@ -276,8 +276,6 @@ main() {
     let sender: address;
     let owner_capability: &R#ETokenCapability.Owner;
     let capability: &R#ETokenCapability.T;
-    let minted_tokens: R#EToken.T;
-    let balance: u64;
 
     sender = get_txn_sender();
 
@@ -290,21 +288,7 @@ main() {
     // Delegate itself as a minter
     ETokenCapability.grant_minter_capability(copy(sender), move(owner_capability));
 
-    // Borrow general capability for proof of minting capability
-    capability = ETokenCapability.borrow_capability();
-
     // Publish an eToken account
     EToken.publish();
-
-    // Mint 100 eTokens and prove minter capability
-    minted_tokens = EToken.mint(10000, copy(capability));
-
-    // Deposit the freshly minted tokens to itself
-    EToken.deposit(move(sender), move(minted_tokens), move(capability));
-
-    // Test that the balance corresponds with the intended behaviour
-    balance = EToken.balance();
-    assert(move(balance) == 10000, 3);
-
     return;
 }

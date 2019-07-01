@@ -5,6 +5,8 @@ main(amount: u64) {
     let capability: &R#ETokenCapability.T;
     let minted_tokens: R#EToken.T;
 
+    sender = get_txn_sender();
+
     // Borrow general capability for proof of minting capability
     capability = ETokenCapability.borrow_capability();
 
