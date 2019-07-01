@@ -3,7 +3,7 @@
 
 use core::borrow::Borrow;
 use std::collections::BTreeMap;
-use std::convert::TryFrom;
+use std::convert::{TryFrom, TryInto};
 use std::fs;
 use std::path::Path;
 
@@ -11,11 +11,11 @@ use compiler::compiler::compile_program;
 use failure::prelude::*;
 use lazy_static::lazy_static;
 use types::account_address::AccountAddress;
-use types::account_config::get_account_resource_or_default;
+use types::account_config::AccountResource;
 use types::transaction::{Program, TransactionArgument};
 use vm::file_format::CompiledProgram;
 
-use crate::{client_proxy::ClientProxy, commands::*};
+use crate::{client_proxy::ClientProxy, commands::*, etoken_resource::ETokenResource};
 
 /// Major command for hack operations.
 pub struct HackCommand {}
@@ -226,7 +226,7 @@ impl Command for HackCommandETokenInit {
                 return;
             }
         };
-        execute_script(client, &address,&ETOKEN_INIT_TEMPLATE, vec![]);
+        execute_script(client, &address, &ETOKEN_INIT_TEMPLATE, vec![]);
     }
 }
 
@@ -259,14 +259,14 @@ impl Command for HackCommandETokenMint {
                 return;
             }
         };
-        let amount = match params[2].parse::<u64>(){
+        let amount = match params[2].parse::<u64>() {
             Ok(i) => i,
             Err(e) => {
                 report_error("invalid amount", e.into());
                 return;
             }
         };
-        execute_script(client, &address,&ETOKEN_MINT_TEMPLATE, vec![TransactionArgument::U64(amount)]);
+        execute_script(client, &address, &ETOKEN_MINT_TEMPLATE, vec![TransactionArgument::U64(amount)]);
     }
 }
 
@@ -307,14 +307,14 @@ impl Command for HackCommandETokenTransfer {
                 return;
             }
         };
-        let amount = match params[3].parse::<u64>(){
+        let amount = match params[3].parse::<u64>() {
             Ok(i) => i,
             Err(e) => {
                 report_error("invalid amount", e.into());
                 return;
             }
         };
-        execute_script(client, &address,&ETOKEN_TRANSFER_TEMPLATE, vec![TransactionArgument::Address(payee_address),TransactionArgument::U64(amount)]);
+        execute_script(client, &address, &ETOKEN_TRANSFER_TEMPLATE, vec![TransactionArgument::Address(payee_address), TransactionArgument::U64(amount)]);
     }
 }
 
@@ -348,21 +348,21 @@ impl Command for HackCommandETokenSell {
                 return;
             }
         };
-        let amount = match params[2].parse::<u64>(){
+        let amount = match params[2].parse::<u64>() {
             Ok(i) => i,
             Err(e) => {
                 report_error("invalid amount", e.into());
                 return;
             }
         };
-        let price = match params[3].parse::<u64>(){
+        let price = match params[3].parse::<u64>() {
             Ok(i) => i,
             Err(e) => {
                 report_error("invalid price", e.into());
                 return;
             }
         };
-        execute_script(client, &address,&ETOKEN_SELL_TEMPLATE, vec![TransactionArgument::U64(amount),TransactionArgument::U64(price)]);
+        execute_script(client, &address, &ETOKEN_SELL_TEMPLATE, vec![TransactionArgument::U64(amount), TransactionArgument::U64(price)]);
     }
 }
 
@@ -402,11 +402,11 @@ impl Command for HackCommandETokenBuy {
                 return;
             }
         };
-        execute_script(client, &address,&ETOKEN_BUY_TEMPLATE, vec![TransactionArgument::Address(payee_address)]);
+        execute_script(client, &address, &ETOKEN_BUY_TEMPLATE, vec![TransactionArgument::Address(payee_address)]);
     }
 }
 
-pub fn execute_script(client: &mut ClientProxy, address: &AccountAddress, script_template:&str, args:Vec<TransactionArgument>){
+pub fn execute_script(client: &mut ClientProxy, address: &AccountAddress, script_template: &str, args: Vec<TransactionArgument>) {
     let compiled_program = match compile_script(script_template, client, &address) {
         Ok(p) => p,
         Err(e) => {
@@ -481,42 +481,34 @@ fn create_transaction_program(program: &CompiledProgram, args: Vec<TransactionAr
 /// Command to query latest account state from validator.
 pub struct HackCommandGetLatestAccountState {}
 
-const CODE_TAG: u8 = 0;
-const RESOURCE_TAG: u8 = 1;
-
-impl Command for HackCommandGetLatestAccountState {
-    fn get_aliases(&self) -> Vec<&'static str> {
-        vec!["account_state", "as"]
-    }
-    fn get_params_help(&self) -> &'static str {
-        "<account_ref_id>|<account_address>"
-    }
-    fn get_description(&self) -> &'static str {
-        "Get the latest state for an account"
-    }
-    fn execute(&self, client: &mut ClientProxy, params: &[&str]) {
+impl HackCommandGetLatestAccountState {
+    fn do_execute(&self, client: &mut ClientProxy, params: &[&str]) -> Result<()> {
         println!(">> Getting latest account state");
         match client.get_latest_account_state(&params) {
-            Ok((acc, version)) => match get_account_resource_or_default(&acc) {
-                Ok(_) => {
+            Ok((acc, version)) => match acc {
+                Some(blob) => {
+                    let account_btree = blob.borrow().try_into()?;
+                    let account_resource = AccountResource::make_from(&account_btree).unwrap_or(AccountResource::default());
+                    let etoken_resource = client.etoken_account.map(|address|
+                        ETokenResource::make_from(address, &account_btree).unwrap_or_default()
+                    ).unwrap_or_default();
+
+
                     println!(
                         "Latest account state is: \n \
                      Account: {:#?}\n \
+                     AccountResource: {:#?}\n \
+                     ETokenResource: {:#?}\n \
                      State: {:#?}\n \
                      Blockchain Version: {}\n",
                         client
                             .get_account_address_from_parameter(params[1])
                             .expect("Unable to parse account parameter"),
-                        acc,
+                        account_resource,
+                        etoken_resource,
+                        blob,
                         version,
                     );
-                    let blob = match acc {
-                        Some(blob) => blob,
-                        None => {
-                            println!("Account State is None");
-                            return;
-                        }
-                    };
                     let tree = BTreeMap::try_from(&blob).unwrap();
                     println!("AccountStateBlob Tree:");
                     tree.iter().map(|(k, v)| -> (String, String) {
@@ -532,9 +524,35 @@ impl Command for HackCommandGetLatestAccountState {
                         println!("key:{:#?}, value:{:#?}", k, v);
                     })
                 }
-                Err(e) => report_error("Error converting account blob to account resource", e),
+                None => {
+                    println!("Account State is None");
+                }
             },
             Err(e) => report_error("Error getting latest account state", e),
+        };
+        Ok(())
+    }
+}
+
+const CODE_TAG: u8 = 0;
+const RESOURCE_TAG: u8 = 1;
+
+impl Command for HackCommandGetLatestAccountState {
+    fn get_aliases(&self) -> Vec<&'static str> {
+        vec!["account_state", "as"]
+    }
+    fn get_params_help(&self) -> &'static str {
+        "<account_ref_id>|<account_address>"
+    }
+    fn get_description(&self) -> &'static str {
+        "Get the latest state for an account"
+    }
+    fn execute(&self, client: &mut ClientProxy, params: &[&str]) {
+        match self.do_execute(client, params) {
+            Ok(_) => {}
+            Err(e) => {
+                report_error("execute command fail:", e);
+            }
         }
     }
 }
