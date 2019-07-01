@@ -15,7 +15,17 @@ use types::account_config::AccountResource;
 use types::transaction::{Program, TransactionArgument};
 use vm::file_format::CompiledProgram;
 
-use crate::{client_proxy::ClientProxy, commands::*, etoken_resource::ETokenResource};
+use crate::{client_proxy::*, commands::*, etoken_resource::ETokenResource};
+
+lazy_static! {
+    pub static ref ETOKEN_ISSUE_TEMPLATE: String = {include_str!("../move/eToken.mvir").to_string()};
+    pub static ref ETOKEN_INIT_TEMPLATE: String = {include_str!("../move/init.mvir").to_string()};
+    pub static ref ETOKEN_MINT_TEMPLATE: String = {include_str!("../move/mint.mvir").to_string()};
+    pub static ref ETOKEN_TRANSFER_TEMPLATE: String = {include_str!("../move/peer_to_peer_transfer.mvir").to_string()};
+    pub static ref ETOKEN_SELL_TEMPLATE: String = {include_str!("../move/sell.mvir").to_string()};
+    pub static ref ETOKEN_BUY_TEMPLATE: String = {include_str!("../move/buy.mvir").to_string()};
+}
+
 
 /// Major command for hack operations.
 pub struct HackCommand {}
@@ -42,20 +52,6 @@ impl Command for HackCommand {
         subcommand_execute(&params[0], commands, client, &params[1..]);
     }
 }
-
-lazy_static! {
-    pub static ref ETOKEN_TXN_BODY: compiler::parser::ast::Program = {
-        let txn_body = include_str!("../move/eToken.mvir");
-        compiler::parser::parse_program(txn_body).unwrap()
-    };
-
-    pub static ref ETOKEN_INIT_TEMPLATE: String = {include_str!("../move/init.mvir").to_string()};
-    pub static ref ETOKEN_MINT_TEMPLATE: String = {include_str!("../move/mint.mvir").to_string()};
-    pub static ref ETOKEN_TRANSFER_TEMPLATE: String = {include_str!("../move/peer_to_peer_transfer.mvir").to_string()};
-    pub static ref ETOKEN_SELL_TEMPLATE: String = {include_str!("../move/sell.mvir").to_string()};
-    pub static ref ETOKEN_BUY_TEMPLATE: String = {include_str!("../move/buy.mvir").to_string()};
-}
-
 
 pub struct HackCommandPublishModule {}
 
@@ -90,47 +86,8 @@ impl Command for HackCommandPublishModule {
                 return;
             }
         };
-        let parsed_program = match compiler::parser::parse_program(&source) {
-            Ok(p) => p,
-            Err(e) => {
-                report_error("parse program fail", e);
-                return;
-            }
-        };
 
-        let dependencies = compiler::util::build_stdlib();
-
-        let compiled_program = match compile_program(&address, &parsed_program, &dependencies) {
-            Ok(p) => p,
-            Err(e) => {
-                report_error("compile program fail.", e);
-                return;
-            }
-        };
-        let is_blocking = true;
-        println!("{}", compiled_program);
-        let program = match create_transaction_program(&compiled_program, vec![]) {
-            Ok(p) => p,
-            Err(e) => {
-                report_error("create transaction program fail.", e);
-                return;
-            }
-        };
-        match client.send_transaction(&address, program, None, None, is_blocking) {
-            Ok(index_and_seq) => {
-                if is_blocking {
-                    println!("Finished transaction!");
-                } else {
-                    println!("Transaction submitted to validator");
-                }
-                println!(
-                    "To query for transaction status, run: query txn_acc_seq {} {} \
-                     <fetch_events=true|false>",
-                    index_and_seq.account_index, index_and_seq.sequence_number
-                );
-            }
-            Err(e) => report_error("Failed to perform transaction", e),
-        }
+        execute_script(client, &address, &ETOKEN_ISSUE_TEMPLATE, vec![]).map(handler_result).map_err(handler_err).ok();
     }
 }
 
@@ -159,41 +116,11 @@ impl Command for HackCommandETokenIssue {
             }
         };
 
-        let dependencies = compiler::util::build_stdlib();
-
-        let compiled_program = match compile_program(&address, &ETOKEN_TXN_BODY, &dependencies) {
-            Ok(p) => p,
-            Err(e) => {
-                report_error("compile program fail.", e);
-                return;
-            }
-        };
-        let is_blocking = true;
-        println!("{}", compiled_program);
-        let program = match create_transaction_program(&compiled_program, vec![]) {
-            Ok(p) => p,
-            Err(e) => {
-                report_error("create transaction program fail.", e);
-                return;
-            }
-        };
-        match client.send_transaction(&address, program, None, None, is_blocking) {
-            Ok(index_and_seq) => {
-                if is_blocking {
-                    println!("Finished transaction!");
-                } else {
-                    println!("Transaction submitted to validator");
-                }
-                println!(
-                    "To query for transaction status, run: query txn_acc_seq {} {} \
-                     <fetch_events=true|false>",
-                    index_and_seq.account_index, index_and_seq.sequence_number
-                );
-                client.etoken_account = Some(address.clone());
-                client.etoken_program = Some(compiled_program);
-            }
-            Err(e) => report_error("Failed to perform transaction", e),
-        }
+        execute_script(client, &address, &ETOKEN_ISSUE_TEMPLATE, vec![]).map(|(compiled_program, seq)| {
+            client.etoken_account = Some(address.clone());
+            client.etoken_program = Some(compiled_program.clone());
+            (compiled_program, seq)
+        }).map(handler_result).map_err(handler_err).ok();
     }
 }
 
@@ -226,7 +153,7 @@ impl Command for HackCommandETokenInit {
                 return;
             }
         };
-        execute_script(client, &address, &ETOKEN_INIT_TEMPLATE, vec![]);
+        execute_script(client, &address, &ETOKEN_INIT_TEMPLATE, vec![]).map(handler_result).map_err(handler_err).ok();
     }
 }
 
@@ -266,7 +193,7 @@ impl Command for HackCommandETokenMint {
                 return;
             }
         };
-        execute_script(client, &address, &ETOKEN_MINT_TEMPLATE, vec![TransactionArgument::U64(amount)]);
+        execute_script(client, &address, &ETOKEN_MINT_TEMPLATE, vec![TransactionArgument::U64(amount)]).map(handler_result).map_err(handler_err).ok();
     }
 }
 
@@ -314,7 +241,7 @@ impl Command for HackCommandETokenTransfer {
                 return;
             }
         };
-        execute_script(client, &address, &ETOKEN_TRANSFER_TEMPLATE, vec![TransactionArgument::Address(payee_address), TransactionArgument::U64(amount)]);
+        execute_script(client, &address, &ETOKEN_TRANSFER_TEMPLATE, vec![TransactionArgument::Address(payee_address), TransactionArgument::U64(amount)]).map(handler_result).map_err(handler_err).ok();
     }
 }
 
@@ -362,7 +289,7 @@ impl Command for HackCommandETokenSell {
                 return;
             }
         };
-        execute_script(client, &address, &ETOKEN_SELL_TEMPLATE, vec![TransactionArgument::U64(amount), TransactionArgument::U64(price)]);
+        execute_script(client, &address, &ETOKEN_SELL_TEMPLATE, vec![TransactionArgument::U64(amount), TransactionArgument::U64(price)]).map(handler_result).map_err(handler_err).ok();
     }
 }
 
@@ -402,51 +329,43 @@ impl Command for HackCommandETokenBuy {
                 return;
             }
         };
-        execute_script(client, &address, &ETOKEN_BUY_TEMPLATE, vec![TransactionArgument::Address(payee_address)]);
+        execute_script(client, &address, &ETOKEN_BUY_TEMPLATE, vec![TransactionArgument::Address(payee_address)]).map(handler_result).map_err(handler_err).ok();
     }
 }
 
-pub fn execute_script(client: &mut ClientProxy, address: &AccountAddress, script_template: &str, args: Vec<TransactionArgument>) {
-    let compiled_program = match compile_script(script_template, client, &address) {
-        Ok(p) => p,
-        Err(e) => {
-            report_error("compile program fail.", e);
-            return;
-        }
-    };
+pub fn handler_err(e: Error) {
+    report_error("execute command fail:", e);
+}
+
+pub fn handler_result(result: (CompiledProgram, IndexAndSequence)) {
+    let index_and_seq = result.1;
+    println!("Finished transaction!");
+    println!(
+        "To query for transaction status, run: query txn_acc_seq {} {} \
+                     <fetch_events=true|false>",
+        index_and_seq.account_index, index_and_seq.sequence_number
+    );
+}
+
+pub fn execute_script(client: &mut ClientProxy, address: &AccountAddress, script_template: &str, args: Vec<TransactionArgument>) -> Result<(CompiledProgram, IndexAndSequence)> {
+    let compiled_program = compile_script(script_template, client, &address)?;
     let is_blocking = true;
     println!("{}", compiled_program);
-    let program = match create_transaction_program(&compiled_program, args) {
-        Ok(p) => p,
-        Err(e) => {
-            report_error("create transaction program fail.", e);
-            return;
-        }
-    };
-    match client.send_transaction(&address, program, None, None, is_blocking) {
-        Ok(index_and_seq) => {
-            if is_blocking {
-                println!("Finished transaction!");
-            } else {
-                println!("Transaction submitted to validator");
-            }
-            println!(
-                "To query for transaction status, run: query txn_acc_seq {} {} \
-                     <fetch_events=true|false>",
-                index_and_seq.account_index, index_and_seq.sequence_number
-            );
-        }
-        Err(e) => report_error("Failed to perform transaction", e),
-    }
+    let program = create_transaction_program(&compiled_program, args)?;
+    let result = client.send_transaction(&address, program, None, None, is_blocking)?;
+    return Ok((compiled_program.clone(), result));
 }
 
 pub fn compile_script(script_template: &str, client: &mut ClientProxy, address: &AccountAddress) -> Result<CompiledProgram> {
     let mut dependencies = vec![];
     dependencies.append(&mut compiler::util::build_stdlib());
-    client.etoken_program.clone().unwrap().modules.iter().for_each(|m| {
-        dependencies.push(m.clone());
-    });
-    let program = parse_script(script_template, &client.etoken_account.borrow().unwrap());
+    if let Some(program) = client.etoken_program.borrow() {
+        program.modules.iter().for_each(|m| {
+            dependencies.push(m.clone());
+        });
+    }
+    let etoken_address = client.etoken_account.borrow().unwrap_or(address.clone());
+    let program = parse_script(script_template, &etoken_address);
     match compile_program(address, &program, &dependencies) {
         Ok(p) => Ok(p),
         Err(e) => Err(e)
@@ -499,14 +418,12 @@ impl HackCommandGetLatestAccountState {
                      Account: {:#?}\n \
                      AccountResource: {:#?}\n \
                      ETokenResource: {:#?}\n \
-                     State: {:#?}\n \
                      Blockchain Version: {}\n",
                         client
                             .get_account_address_from_parameter(params[1])
                             .expect("Unable to parse account parameter"),
                         account_resource,
                         etoken_resource,
-                        blob,
                         version,
                     );
                     let tree = BTreeMap::try_from(&blob).unwrap();
@@ -567,6 +484,9 @@ mod tests {
     fn test_parse_script() {
         //println!("{:?}", AccountAddress::random());
         //println!("{:?}",AccountAddress::default().to_string());
+
+        let program = parse_script(&ETOKEN_ISSUE_TEMPLATE, &AccountAddress::random());
+        println!("{:?}", program);
         let program = parse_script(&ETOKEN_INIT_TEMPLATE, &AccountAddress::random());
         println!("{:?}", program);
         let program = parse_script(&ETOKEN_MINT_TEMPLATE, &AccountAddress::random());
