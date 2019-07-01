@@ -411,7 +411,7 @@ impl HackCommandGetLatestAccountState {
                     let etoken_resource = match client.etoken_account {
                         Some(address) => match ETokenResource::make_from(address, &account_btree) {
                             Ok(res) => Some(res),
-                            Err(e) => None,
+                            Err(_) => None,
                         },
                         None => None,
                     };
