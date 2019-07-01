@@ -39,7 +39,7 @@ impl Command for HackCommand {
     }
     fn execute(&self, client: &mut ClientProxy, params: &[&str]) {
         let commands: Vec<Box<dyn Command>> = vec![
-            Box::new(HackCommandPublishModule {}),
+            Box::new(HackCommandExecuteModule {}),
             Box::new(HackCommandGetLatestAccountState {}),
             Box::new(HackCommandETokenIssue {}),
             Box::new(HackCommandETokenInit {}),
@@ -53,17 +53,17 @@ impl Command for HackCommand {
     }
 }
 
-pub struct HackCommandPublishModule {}
+pub struct HackCommandExecuteModule {}
 
-impl Command for HackCommandPublishModule {
+impl Command for HackCommandExecuteModule {
     fn get_aliases(&self) -> Vec<&'static str> {
-        vec!["publish", "pub"]
+        vec!["execute", "exe"]
     }
     fn get_params_help(&self) -> &'static str {
-        "<account_ref_id> <module_path>"
+        "<account_ref_id> <script_path>"
     }
     fn get_description(&self) -> &'static str {
-        "Publish module to an account"
+        "Execute a move script"
     }
     fn execute(&self, client: &mut ClientProxy, params: &[&str]) {
         if params.len() != 3 {
