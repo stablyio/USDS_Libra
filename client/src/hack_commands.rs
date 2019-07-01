@@ -186,7 +186,7 @@ impl Command for HackCommandETokenMint {
                 return;
             }
         };
-        let amount = match ClientProxy::convert_to_micro_libras(params[2]){
+        let amount = match ClientProxy::convert_to_micro_libras(params[2]) {
             Ok(i) => i,
             Err(e) => {
                 report_error("invalid amount", e.into());
@@ -234,7 +234,7 @@ impl Command for HackCommandETokenTransfer {
                 return;
             }
         };
-        let amount = match ClientProxy::convert_to_micro_libras(params[3]){
+        let amount = match ClientProxy::convert_to_micro_libras(params[3]) {
             Ok(i) => i,
             Err(e) => {
                 report_error("invalid amount", e.into());
@@ -275,7 +275,7 @@ impl Command for HackCommandETokenSell {
                 return;
             }
         };
-        let amount = match ClientProxy::convert_to_micro_libras(params[2]){
+        let amount = match ClientProxy::convert_to_micro_libras(params[2]) {
             Ok(i) => i,
             Err(e) => {
                 report_error("invalid amount", e.into());
@@ -408,9 +408,13 @@ impl HackCommandGetLatestAccountState {
                 Some(blob) => {
                     let account_btree = blob.borrow().try_into()?;
                     let account_resource = AccountResource::make_from(&account_btree).unwrap_or(AccountResource::default());
-                    let etoken_resource = client.etoken_account.map(|address|
-                        ETokenResource::make_from(address, &account_btree)
-                    ).or(None);
+                    let etoken_resource = match client.etoken_account {
+                        Some(address) => match ETokenResource::make_from(address, &account_btree) {
+                            Ok(res) => Some(res),
+                            Err(e) => None,
+                        },
+                        None => None,
+                    };
 
 
                     println!(
