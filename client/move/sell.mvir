@@ -1,6 +1,6 @@
 import ${etoken_address}.EToken;
 import ${etoken_address}.ETokenCapability;
 main (amount: u64, price: u64) {
-  Etoken.sell_token(move(amount), move(price));
+  EToken.sell_token(move(amount), move(price));
   return;
 }
