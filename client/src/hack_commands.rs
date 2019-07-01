@@ -87,7 +87,7 @@ impl Command for HackCommandPublishModule {
             }
         };
 
-        execute_script(client, &address, &ETOKEN_ISSUE_TEMPLATE, vec![]).map(handler_result).map_err(handler_err).ok();
+        execute_script(client, &address, source.as_str(), vec![]).map(handler_result).map_err(handler_err).ok();
     }
 }
 

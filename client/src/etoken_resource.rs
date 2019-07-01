@@ -1,4 +1,4 @@
-use std::{collections::BTreeMap, convert::TryInto};
+use std::{collections::BTreeMap};
 use canonical_serialization::{CanonicalSerialize, SimpleDeserializer, CanonicalSerializer, CanonicalDeserializer, CanonicalDeserialize};
 use failure::prelude::*;
 use types::access_path::{Accesses, AccessPath};
