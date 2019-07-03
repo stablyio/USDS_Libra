@@ -37,4 +37,8 @@ hack buy 1 0
 hack account_state 0
 hack account_state 1
 
+# execute a script directly to create an account
+
+hack execute 0 ${replace me with libra project path}/language/functional_tests/tests/testsuite/move_getting_started_examples/create_account_script.mvir 0dfda76385ef8812a4bec0b3fbb1997c1336d78411ae3059c0ad9ba14ac1b2d7 500
+
 ```
