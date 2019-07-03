@@ -12,8 +12,10 @@ use failure::prelude::*;
 use lazy_static::lazy_static;
 use types::account_address::AccountAddress;
 use types::account_config::AccountResource;
+use types::byte_array::ByteArray;
 use types::transaction::{Program, TransactionArgument};
-use vm::file_format::CompiledProgram;
+use vm::access::ScriptAccess;
+use vm::file_format::{CompiledProgram, FunctionSignature, SignatureToken};
 
 use crate::{client_proxy::*, commands::*, etoken_resource::ETokenResource};
 
@@ -60,13 +62,13 @@ impl Command for HackCommandExecuteModule {
         vec!["execute", "exe"]
     }
     fn get_params_help(&self) -> &'static str {
-        "<account_ref_id> <script_path>"
+        "<account_ref_id> <script_path> <script_arguments>"
     }
     fn get_description(&self) -> &'static str {
         "Execute a move script"
     }
     fn execute(&self, client: &mut ClientProxy, params: &[&str]) {
-        if params.len() != 3 {
+        if params.len() < 3 {
             println!("Invalid number of arguments for command");
             return;
         }
@@ -86,8 +88,9 @@ impl Command for HackCommandExecuteModule {
                 return;
             }
         };
-
-        execute_script(client, &address, source.as_str(), vec![]).map(handler_result).map_err(handler_err).ok();
+        let script_args =params[3..params.len()].to_vec().iter().map(|str| str.to_string()).collect();
+        execute_script_with_resolver(client, &address, source.as_str(),
+                                     param_parse_arg_resolver(script_args)).map(handler_result).map_err(handler_err).ok();
     }
 }
 
@@ -347,11 +350,45 @@ pub fn handler_result(result: (CompiledProgram, IndexAndSequence)) {
     );
 }
 
+fn direct_arg_resolver(args: Vec<TransactionArgument>) -> Box<FnOnce(&CompiledProgram) -> Result<Vec<TransactionArgument>>> {
+    return Box::new(|_compiled_program: &CompiledProgram| -> Result<Vec<TransactionArgument>>{
+        Ok(args)
+    });
+}
+
+fn param_parse_arg_resolver(args: Vec<String>) -> Box<FnOnce(&CompiledProgram) -> Result<Vec<TransactionArgument>>> {
+    return Box::new(move |compiled_program: &CompiledProgram| -> Result<Vec<TransactionArgument>>{
+        let script = compiled_program.script.borrow();
+        let script_mut = script.clone().into_inner();
+        let main_fun = script.main();
+        let main_signature: &FunctionSignature = script_mut.function_signatures.get(main_fun.function.0 as usize).unwrap();
+        if main_signature.arg_types.len() != args.len() {
+            bail!("miss script arguments, expect:{:#?} ", main_signature.arg_types.clone());
+        }
+        let tx_args: Result<Vec<_>> = main_signature.arg_types.iter().enumerate().map(|(idx, arg_type)| -> Result<TransactionArgument>{
+            match arg_type {
+                SignatureToken::String => Ok(TransactionArgument::String(args[idx].clone())),
+                SignatureToken::Address => Ok(TransactionArgument::Address(AccountAddress::try_from(args[idx].clone())?)),
+                SignatureToken::U64 => Ok(TransactionArgument::U64(args[idx].parse()?)),
+                SignatureToken::ByteArray => Ok(TransactionArgument::ByteArray(ByteArray::new(hex::decode(args[idx].clone())?))),
+                _ => bail!("unsupported arg type:{:#?}", arg_type)
+            }
+        }).collect();
+        Ok(tx_args?)
+        //Ok(vec![])
+    });
+}
+
 pub fn execute_script(client: &mut ClientProxy, address: &AccountAddress, script_template: &str, args: Vec<TransactionArgument>) -> Result<(CompiledProgram, IndexAndSequence)> {
+    return execute_script_with_resolver(client, address, script_template, direct_arg_resolver(args));
+}
+
+pub fn execute_script_with_resolver(client: &mut ClientProxy, address: &AccountAddress, script_template: &str, arg_resolver: Box<FnOnce(&CompiledProgram) -> Result<Vec<TransactionArgument>>>) -> Result<(CompiledProgram, IndexAndSequence)> {
     let compiled_program = compile_script(script_template, client, &address)?;
     let is_blocking = true;
-    //println!("{}", compiled_program);
-    let program = create_transaction_program(&compiled_program, args)?;
+    let tx_args = arg_resolver(&compiled_program)?;
+    println!("{}", compiled_program);
+    let program = create_transaction_program(&compiled_program, tx_args)?;
     let result = client.send_transaction(&address, program, None, None, is_blocking)?;
     return Ok((compiled_program.clone(), result));
 }
@@ -365,18 +402,18 @@ pub fn compile_script(script_template: &str, client: &mut ClientProxy, address: 
         });
     }
     let etoken_address = client.etoken_account.borrow().unwrap_or(address.clone());
-    let program = parse_script(script_template, &etoken_address);
+    let program = parse_script(script_template, &etoken_address)?;
     match compile_program(address, &program, &dependencies) {
         Ok(p) => Ok(p),
         Err(e) => Err(e)
     }
 }
 
-pub fn parse_script(script_template: &str, etoken_address: &AccountAddress) -> compiler::parser::ast::Program {
+pub fn parse_script(script_template: &str, etoken_address: &AccountAddress) -> Result<compiler::parser::ast::Program> {
     let mut address_str = "0x".to_owned();
     address_str.push_str(etoken_address.to_string().as_str());
     let script = script_template.replace("${etoken_address}", address_str.as_str());
-    compiler::parser::parse_program(script.as_str()).unwrap()
+    compiler::parser::parse_program(script.as_str())
 }
 
 fn create_transaction_program(program: &CompiledProgram, args: Vec<TransactionArgument>) -> Result<Program> {
@@ -501,5 +538,11 @@ mod tests {
         println!("{:?}", program);
         let program = parse_script(&ETOKEN_BUY_TEMPLATE, &AccountAddress::random());
         println!("{:?}", program);
+    }
+
+    #[test]
+    fn test_slice(){
+        let a = ["0","1","2"];
+        println!("{}",&a[3..a.len()].len());
     }
 }
