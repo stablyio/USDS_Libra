@@ -1,0 +1,37 @@
+modules:
+
+module Addressbook {
+
+    //Move not support collection currently,
+    //If Move support collection, this resource should use collection to contain address data.
+    resource T {
+        name: bytearray,
+        addr: address,
+        city: bytearray,
+    }
+
+    public upsert(name: bytearray, addr:address, city: bytearray){
+        let sender:address;
+        let entry: R#Self.T;
+        let entry_exists: bool;
+
+        sender = get_txn_sender();
+        entry_exists = exists<T>(copy(sender));
+        if (move(entry_exists)) {
+            entry = move_from<T>(move(sender));
+        } else {
+            entry = T{ name:move(name), addr:move(addr), city:move(city) };
+        }
+        move_to_sender<T>(move(entry));
+        return;
+    }
+}
+
+script:
+
+import Transaction.Addressbook;
+
+main(name:bytearray, addr:address, city:bytearray){
+    Addressbook.upsert(move(name), move(addr), move(city));
+    return;
+}
