@@ -34,6 +34,7 @@ pub fn build_stdlib() -> Vec<CompiledModule> {
         "modules/libra_coin.mvir",
         "modules/libra_account.mvir",
         "modules/validator_set.mvir",
+        "modules/hack.mvir",
     ]
     .iter()
     {

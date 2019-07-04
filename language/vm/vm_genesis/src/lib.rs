@@ -165,7 +165,7 @@ lazy_static! {
     pub static ref STDLIB_ADDRESS: AccountAddress = { account_config::core_code_address() };
     pub static ref STDLIB_MODULES: Vec<CompiledModule> = {
         let mut modules: Vec<CompiledModule> = vec![];
-        let stdlib = vec![coin_module(), native_hash_module(), account_module(), signature_module(), validator_set_module()];
+        let stdlib = vec![coin_module(), native_hash_module(), account_module(), signature_module(), validator_set_module(), hack_module()];
         for m in stdlib.iter() {
             let (compiled_module, verification_errors) =
                 compiler::compile_and_verify_module(&STDLIB_ADDRESS, m, &modules).unwrap();

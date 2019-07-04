@@ -1,0 +1,3 @@
+module Hack {
+    native public echo(data: bytearray): bytearray;
+}

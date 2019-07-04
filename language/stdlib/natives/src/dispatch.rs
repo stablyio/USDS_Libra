@@ -1,10 +1,12 @@
 // Copyright (c) The Libra Core Contributors
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::{hash, signature};
-pub use failure::Error;
 use failure::*;
+pub use failure::Error;
 use types::byte_array::ByteArray;
+
+use crate::{hack, hash, signature};
+
 pub type Result<T> = ::std::result::Result<T, Error>;
 
 pub enum NativeReturnType {
@@ -60,6 +62,14 @@ pub fn dispatch_native_call<T: StackAccessor>(
                 function_name
             ),
         },
+        "Hack" => match function_name {
+            "echo" => hack::native_echo(accessor),
+            &_ => bail!(
+                "Unknown native function `{}.{}'",
+                module_name,
+                function_name
+            ),
+        }
         &_ => bail!("Unknown native module {}", module_name),
     }
 }

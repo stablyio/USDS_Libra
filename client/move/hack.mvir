@@ -1,0 +1,8 @@
+import 0x0.Hack;
+
+main(arg:bytearray) {
+    let ret: bytearray;
+    ret = Hack.echo(move(arg));
+    //release(move(ret));
+    return;
+}

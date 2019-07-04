@@ -22,6 +22,8 @@ lazy_static! {
         make_module_definition!("../modules/signature.mvir");
     static ref VALIDATOR_SET_MODULE: ModuleDefinition =
         make_module_definition!("../modules/validator_set.mvir");
+    static ref HACK_MODULE: ModuleDefinition =
+        make_module_definition!("../modules/hack.mvir");
 }
 
 pub fn account_module() -> ModuleDefinition {
@@ -42,4 +44,8 @@ pub fn signature_module() -> ModuleDefinition {
 
 pub fn validator_set_module() -> ModuleDefinition {
     VALIDATOR_SET_MODULE.clone()
+}
+
+pub fn hack_module() -> ModuleDefinition {
+    HACK_MODULE.clone()
 }

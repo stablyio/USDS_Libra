@@ -76,9 +76,13 @@ fn stdlib_deps(address: &AccountAddress) -> Vec<CompiledModule> {
     let compiled_hash_module =
         compile_module(&address, &hash_module, &[]).expect("hash must compile");
 
+    let hack_module = hack_module();
+    let compiled_hack_module =
+        compile_module(&address, &hack_module, &[]).expect("hack must compile");
+
     let account_module = account_module();
 
-    let mut deps = vec![compiled_coin_module, compiled_hash_module];
+    let mut deps = vec![compiled_coin_module, compiled_hash_module, compiled_hack_module];
     let compiled_account_module =
         compile_module(&address, &account_module, &deps).expect("account must compile");
 
