@@ -15,7 +15,7 @@ hex = "0.3.2"
 hyper = "0.12"
 itertools = "0.8.0"
 proptest = "0.9.2"
-protobuf = "2.6"
+protobuf = "2.7"
 rand = "0.6.5"
 rustyline = "4.1.0"
 tokio = "0.1.16"
@@ -38,6 +38,7 @@ proto_conv = { path = "../common/proto_conv" }
 types = { path = "../types" }
 vm_genesis = { path = "../language/vm/vm_genesis" }
 compiler = { path = "../language/compiler"}
+bytecode_verifier = { path = "../language/bytecode_verifier"}
 vm = { path = "../language/vm"}
 canonical_serialization = {path = "../common/canonical_serialization"}
 

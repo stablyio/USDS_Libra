@@ -7,7 +7,6 @@ use std::convert::{TryFrom, TryInto};
 use std::fs;
 use std::path::Path;
 
-use compiler::compiler::compile_program;
 use failure::prelude::*;
 use lazy_static::lazy_static;
 use types::account_address::AccountAddress;
@@ -18,6 +17,8 @@ use vm::access::ScriptAccess;
 use vm::file_format::{CompiledProgram, FunctionSignature, SignatureToken};
 
 use crate::{client_proxy::*, commands::*, etoken_resource::ETokenResource};
+use compiler::Compiler;
+use bytecode_verifier::verifier::VerifiedProgram;
 
 lazy_static! {
     pub static ref ETOKEN_ISSUE_TEMPLATE: String = {include_str!("../move/eToken.mvir").to_string()};
@@ -121,7 +122,7 @@ impl Command for HackCommandETokenIssue {
 
         execute_script(client, &address, &ETOKEN_ISSUE_TEMPLATE, vec![]).map(|(compiled_program, seq)| {
             client.etoken_account = Some(address.clone());
-            client.etoken_program = Some(compiled_program.clone());
+            client.etoken_program.append(&mut compiled_program.modules().to_vec());
             (compiled_program, seq)
         }).map(handler_result).map_err(handler_err).ok();
     }
@@ -379,41 +380,45 @@ fn param_parse_arg_resolver(args: Vec<String>) -> Box<FnOnce(&CompiledProgram) -
     });
 }
 
-pub fn execute_script(client: &mut ClientProxy, address: &AccountAddress, script_template: &str, args: Vec<TransactionArgument>) -> Result<(CompiledProgram, IndexAndSequence)> {
+pub fn execute_script(client: &mut ClientProxy, address: &AccountAddress, script_template: &str, args: Vec<TransactionArgument>) -> Result<(VerifiedProgram<'a>, IndexAndSequence)> {
     return execute_script_with_resolver(client, address, script_template, direct_arg_resolver(args));
 }
 
-pub fn execute_script_with_resolver(client: &mut ClientProxy, address: &AccountAddress, script_template: &str, arg_resolver: Box<FnOnce(&CompiledProgram) -> Result<Vec<TransactionArgument>>>) -> Result<(CompiledProgram, IndexAndSequence)> {
-    let compiled_program = compile_script(script_template, client, &address)?;
+pub fn execute_script_with_resolver(client: &mut ClientProxy, address: &AccountAddress, script_template: &str, arg_resolver: Box<FnOnce(&CompiledProgram) -> Result<Vec<TransactionArgument>>>) -> Result<(VerifiedProgram<'a>, IndexAndSequence)> {
+    let verified_program = compile_script(script_template, client, &address)?;
+    let verified_program_clone = verified_program.clone();
+    let compile_program = verified_program.into_inner();
     let is_blocking = true;
-    let tx_args = arg_resolver(&compiled_program)?;
-    println!("{}", compiled_program);
-    let program = create_transaction_program(&compiled_program, tx_args)?;
+    let tx_args = arg_resolver(&compile_program)?;
+    println!("{}", verified_program);
+    let program = create_transaction_program(&compile_program, tx_args)?;
     let result = client.send_transaction(&address, program, None, None, is_blocking)?;
-    return Ok((compiled_program.clone(), result));
+    return Ok((verified_program_clone, result));
 }
 
-pub fn compile_script(script_template: &str, client: &mut ClientProxy, address: &AccountAddress) -> Result<CompiledProgram> {
-    let mut dependencies = vec![];
-    dependencies.append(&mut compiler::util::build_stdlib());
-    if let Some(program) = client.etoken_program.borrow() {
-        program.modules.iter().for_each(|m| {
-            dependencies.push(m.clone());
-        });
-    }
+pub fn compile_script(script_template: &str, client: &mut ClientProxy, address: &AccountAddress) -> Result<VerifiedProgram<'a>> {
     let etoken_address = client.etoken_account.borrow().unwrap_or(address.clone());
-    let program = parse_script(script_template, &etoken_address)?;
-    match compile_program(address, &program, &dependencies) {
-        Ok(p) => Ok(p),
-        Err(e) => Err(e)
-    }
+
+    let source = parse_script(script_template, &etoken_address);
+    let compiler = Compiler {
+        code: &source,
+        skip_stdlib_deps: false,
+        stdlib_address: AccountAddress::default(),
+        extra_deps: client.etoken_program.clone(),
+        ..Compiler::default()
+    };
+    let (compiled_program, dependencies) = compiler
+        .into_compiled_program_and_deps()?;
+    let verified_program = VerifiedProgram::new(compiled_program, &dependencies)?;
+    Ok(verified_program)
 }
 
-pub fn parse_script(script_template: &str, etoken_address: &AccountAddress) -> Result<compiler::parser::ast::Program> {
+pub fn parse_script(script_template: &str, etoken_address: &AccountAddress) -> String {
     let mut address_str = "0x".to_owned();
     address_str.push_str(etoken_address.to_string().as_str());
     let script = script_template.replace("${etoken_address}", address_str.as_str());
-    compiler::parser::parse_program(script.as_str())
+    return script;
+    //compiler::parser::parse_program(script.as_str())
 }
 
 fn create_transaction_program(program: &CompiledProgram, args: Vec<TransactionArgument>) -> Result<Program> {
@@ -430,7 +435,6 @@ fn create_transaction_program(program: &CompiledProgram, args: Vec<TransactionAr
         })
         .collect::<Result<Vec<_>>>()?;
 
-    // Currently we do not support transaction arguments in functional tests.
     Ok(Program::new(script_blob, module_blobs, args))
 }
 

@@ -1,11 +1,10 @@
 // Copyright (c) The Libra Core Contributors
 // SPDX-License-Identifier: Apache-2.0
 
-use failure::*;
+use crate::{hash, primitive_helpers, signature};
 pub use failure::Error;
-use types::byte_array::ByteArray;
-
-use crate::{hack, hash, signature};
+use failure::*;
+use types::{account_address::AccountAddress, byte_array::ByteArray};
 
 pub type Result<T> = ::std::result::Result<T, Error>;
 
@@ -35,6 +34,8 @@ impl CostedReturnType {
 
 pub trait StackAccessor {
     fn get_byte_array(&mut self) -> Result<ByteArray>;
+    fn get_u64(&mut self) -> Result<u64>;
+    fn get_address(&mut self) -> Result<AccountAddress>;
 }
 
 pub fn dispatch_native_call<T: StackAccessor>(
@@ -62,14 +63,30 @@ pub fn dispatch_native_call<T: StackAccessor>(
                 function_name
             ),
         },
-        "Hack" => match function_name {
-            "echo" => hack::native_echo(accessor),
+        "AddressUtil" => match function_name {
+            "address_to_bytes" => primitive_helpers::native_address_to_bytes(accessor),
             &_ => bail!(
                 "Unknown native function `{}.{}'",
                 module_name,
                 function_name
             ),
-        }
+        },
+        "U64Util" => match function_name {
+            "u64_to_bytes" => primitive_helpers::native_u64_to_bytes(accessor),
+            &_ => bail!(
+                "Unknown native function `{}.{}'",
+                module_name,
+                function_name
+            ),
+        },
+        "BytearrayUtil" => match function_name {
+            "bytearray_concat" => primitive_helpers::native_bytearray_concat(accessor),
+            &_ => bail!(
+                "Unknown native function `{}.{}'",
+                module_name,
+                function_name
+            ),
+        },
         &_ => bail!("Unknown native module {}", module_name),
     }
 }
