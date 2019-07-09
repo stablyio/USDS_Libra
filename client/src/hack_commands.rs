@@ -515,6 +515,37 @@ impl Command for HackCommandGetLatestAccountState {
     }
 }
 
+
+pub struct HackCommandWriteSet {}
+
+impl HackCommandWriteSet{
+
+    fn do_execute(&self, client: &mut ClientProxy, params: &[&str])->Result<()>{
+        unimplemented!()
+    }
+}
+
+impl Command for HackCommandWriteSet {
+    fn get_aliases(&self) -> Vec<&'static str> {
+        vec!["write_set", "ws"]
+    }
+    fn get_params_help(&self) -> &'static str {
+        "<account_ref_id>|<account_address>"
+    }
+    fn get_description(&self) -> &'static str {
+        "Directly save resource to account"
+    }
+    fn execute(&self, client: &mut ClientProxy, params: &[&str]) {
+        match self.do_execute(client, params) {
+            Ok(_) => {}
+            Err(e) => {
+                report_error("execute command fail:", e);
+            }
+        }
+    }
+}
+
+
 #[cfg(test)]
 mod tests {
     use types::account_address::AccountAddress;
