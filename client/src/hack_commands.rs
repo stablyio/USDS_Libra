@@ -19,6 +19,7 @@ use vm::file_format::{CompiledProgram, FunctionSignature, SignatureToken};
 use crate::{client_proxy::*, commands::*, etoken_resource::ETokenResource};
 use compiler::Compiler;
 use bytecode_verifier::verifier::VerifiedProgram;
+use bytecode_verifier::VerifiedModule;
 
 lazy_static! {
     pub static ref ETOKEN_ISSUE_TEMPLATE: String = {include_str!("../move/eToken.mvir").to_string()};
@@ -120,10 +121,11 @@ impl Command for HackCommandETokenIssue {
             }
         };
 
-        execute_script(client, &address, &ETOKEN_ISSUE_TEMPLATE, vec![]).map(|(compiled_program, seq)| {
+        execute_script(client, &address, &ETOKEN_ISSUE_TEMPLATE, vec![]).map(|(compiled_program, deps, seq)| {
             client.etoken_account = Some(address.clone());
-            client.etoken_program.append(&mut compiled_program.modules().to_vec());
-            (compiled_program, seq)
+            let verified_program = VerifiedProgram::new(compiled_program.clone(), &deps).unwrap();
+            client.etoken_program.append(&mut verified_program.modules().to_vec());
+            (compiled_program, deps, seq)
         }).map(handler_result).map_err(handler_err).ok();
     }
 }
@@ -341,8 +343,8 @@ pub fn handler_err(e: Error) {
     report_error("execute command fail:", e);
 }
 
-pub fn handler_result(result: (CompiledProgram, IndexAndSequence)) {
-    let index_and_seq = result.1;
+pub fn handler_result(result: (CompiledProgram, Vec<VerifiedModule>, IndexAndSequence)) {
+    let index_and_seq = result.2;
     println!("Finished transaction!");
     println!(
         "To query for transaction status, run: query txn_acc_seq {} {} \
@@ -351,13 +353,13 @@ pub fn handler_result(result: (CompiledProgram, IndexAndSequence)) {
     );
 }
 
-fn direct_arg_resolver(args: Vec<TransactionArgument>) -> Box<FnOnce(&CompiledProgram) -> Result<Vec<TransactionArgument>>> {
+fn direct_arg_resolver(args: Vec<TransactionArgument>) -> Box<dyn FnOnce(&CompiledProgram) -> Result<Vec<TransactionArgument>>> {
     return Box::new(|_compiled_program: &CompiledProgram| -> Result<Vec<TransactionArgument>>{
         Ok(args)
     });
 }
 
-fn param_parse_arg_resolver(args: Vec<String>) -> Box<FnOnce(&CompiledProgram) -> Result<Vec<TransactionArgument>>> {
+fn param_parse_arg_resolver(args: Vec<String>) -> Box<dyn FnOnce(&CompiledProgram) -> Result<Vec<TransactionArgument>>> {
     return Box::new(move |compiled_program: &CompiledProgram| -> Result<Vec<TransactionArgument>>{
         let script = compiled_program.script.borrow();
         let script_mut = script.clone().into_inner();
@@ -380,27 +382,26 @@ fn param_parse_arg_resolver(args: Vec<String>) -> Box<FnOnce(&CompiledProgram) -
     });
 }
 
-pub fn execute_script(client: &mut ClientProxy, address: &AccountAddress, script_template: &str, args: Vec<TransactionArgument>) -> Result<(VerifiedProgram<'a>, IndexAndSequence)> {
+pub fn execute_script(client: &mut ClientProxy, address: &AccountAddress, script_template: &str, args: Vec<TransactionArgument>) -> Result<(CompiledProgram,Vec<VerifiedModule>, IndexAndSequence)> {
     return execute_script_with_resolver(client, address, script_template, direct_arg_resolver(args));
 }
 
-pub fn execute_script_with_resolver(client: &mut ClientProxy, address: &AccountAddress, script_template: &str, arg_resolver: Box<FnOnce(&CompiledProgram) -> Result<Vec<TransactionArgument>>>) -> Result<(VerifiedProgram<'a>, IndexAndSequence)> {
-    let verified_program = compile_script(script_template, client, &address)?;
-    let verified_program_clone = verified_program.clone();
-    let compile_program = verified_program.into_inner();
+pub fn execute_script_with_resolver(client: &mut ClientProxy, address: &AccountAddress, script_template: &str, arg_resolver: Box<dyn FnOnce(&CompiledProgram) -> Result<Vec<TransactionArgument>>>) -> Result<(CompiledProgram,Vec<VerifiedModule>, IndexAndSequence)> {
+    let (compiled_program, deps) = compile_script(script_template, client, &address)?;
     let is_blocking = true;
-    let tx_args = arg_resolver(&compile_program)?;
-    println!("{}", verified_program);
-    let program = create_transaction_program(&compile_program, tx_args)?;
+    let tx_args = arg_resolver(&compiled_program)?;
+    println!("{:#?}", compiled_program);
+    let program = create_transaction_program(&compiled_program, tx_args)?;
     let result = client.send_transaction(&address, program, None, None, is_blocking)?;
-    return Ok((verified_program_clone, result));
+    return Ok((compiled_program, deps,result));
 }
 
-pub fn compile_script(script_template: &str, client: &mut ClientProxy, address: &AccountAddress) -> Result<VerifiedProgram<'a>> {
+pub fn compile_script(script_template: &str, client: &mut ClientProxy, address: &AccountAddress) -> Result<(CompiledProgram,Vec<VerifiedModule>)> {
     let etoken_address = client.etoken_account.borrow().unwrap_or(address.clone());
 
     let source = parse_script(script_template, &etoken_address);
     let compiler = Compiler {
+        address: address.clone(),
         code: &source,
         skip_stdlib_deps: false,
         stdlib_address: AccountAddress::default(),
@@ -409,8 +410,8 @@ pub fn compile_script(script_template: &str, client: &mut ClientProxy, address: 
     };
     let (compiled_program, dependencies) = compiler
         .into_compiled_program_and_deps()?;
-    let verified_program = VerifiedProgram::new(compiled_program, &dependencies)?;
-    Ok(verified_program)
+    //let verified_program = VerifiedProgram::new(compiled_program, &dependencies)?;
+    Ok((compiled_program, dependencies))
 }
 
 pub fn parse_script(script_template: &str, etoken_address: &AccountAddress) -> String {

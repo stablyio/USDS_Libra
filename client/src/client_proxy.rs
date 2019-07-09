@@ -41,8 +41,6 @@ use types::{
     transaction_helpers::{create_signed_txn, TransactionSigner},
     validator_verifier::ValidatorVerifier,
 };
-use vm::file_format::CompiledProgram;
-use bytecode_verifier::verifier::VerifiedProgram;
 use bytecode_verifier::VerifiedModule;
 
 const CLIENT_WALLET_MNEMONIC_FILE: &str = "client.mnemonic";
