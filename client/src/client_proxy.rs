@@ -507,7 +507,8 @@ impl ClientProxy {
         self.submit_custom_transaction(signer_account_address, txn, is_blocking)
     }
 
-    fn submit_custom_transaction(
+    /// submit a custom transaction
+    pub fn submit_custom_transaction(
         &mut self,
         signer_address: AccountAddress,
         txn: RawTransaction,
@@ -780,7 +781,7 @@ impl ClientProxy {
     }
 
     /// Get account resource from validator and update status of account if it is cached locally.
-    fn get_account_resource_and_update(
+    pub fn get_account_resource_and_update(
         &mut self,
         address: AccountAddress,
     ) -> Result<AccountResource> {

@@ -12,7 +12,7 @@ use lazy_static::lazy_static;
 use types::account_address::AccountAddress;
 use types::account_config::AccountResource;
 use types::byte_array::ByteArray;
-use types::transaction::{Program, TransactionArgument};
+use types::transaction::{Program, TransactionArgument, RawTransaction};
 use vm::access::ScriptAccess;
 use vm::file_format::{CompiledProgram, FunctionSignature, SignatureToken};
 
@@ -20,6 +20,9 @@ use crate::{client_proxy::*, commands::*, etoken_resource::ETokenResource};
 use compiler::Compiler;
 use bytecode_verifier::verifier::VerifiedProgram;
 use bytecode_verifier::VerifiedModule;
+use types::write_set::{WriteSetMut, WriteOp};
+use types::access_path::AccessPath;
+use canonical_serialization::SimpleSerializer;
 
 lazy_static! {
     pub static ref ETOKEN_ISSUE_TEMPLATE: String = {include_str!("../move/eToken.mvir").to_string()};
@@ -51,6 +54,7 @@ impl Command for HackCommand {
             Box::new(HackCommandETokenTransfer {}),
             Box::new(HackCommandETokenSell {}),
             Box::new(HackCommandETokenBuy {}),
+            Box::new(HackCommandWriteSet{}),
         ];
 
         subcommand_execute(&params[0], commands, client, &params[1..]);
@@ -526,7 +530,19 @@ pub struct HackCommandWriteSet {}
 impl HackCommandWriteSet{
 
     fn do_execute(&self, client: &mut ClientProxy, params: &[&str])->Result<()>{
-        unimplemented!()
+        let signer_account_address =
+            client.get_account_address_from_parameter(params[1])?;
+        let path = ETokenResource::etoken_resource_path(client.etoken_account.unwrap().clone());
+        let ap = AccessPath::new(signer_account_address.clone(),path);
+        let resource = ETokenResource::new(9999);
+        let resource_bytes = SimpleSerializer::serialize(&resource).unwrap();
+        let mut write_set = WriteSetMut::default();
+        write_set.push((ap, WriteOp::Value(resource_bytes)));
+        let ws = write_set.freeze()?;
+        let sequence = client.get_account_resource_and_update(signer_account_address.clone()).unwrap().sequence_number();
+        let tx = RawTransaction::new_write_set(signer_account_address,sequence, ws);
+        client.submit_custom_transaction(signer_account_address, tx, true)?;
+        Ok(())
     }
 }
 
@@ -538,9 +554,13 @@ impl Command for HackCommandWriteSet {
         "<account_ref_id>|<account_address>"
     }
     fn get_description(&self) -> &'static str {
-        "Directly save resource to account"
+        "Directly save resource to account, this command will fail because of RejectedWriteSet error"
     }
     fn execute(&self, client: &mut ClientProxy, params: &[&str]) {
+        if client.etoken_account.is_none() {
+            println!("Please issue etoken first.");
+            return;
+        }
         match self.do_execute(client, params) {
             Ok(_) => {}
             Err(e) => {

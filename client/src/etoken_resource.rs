@@ -14,6 +14,13 @@ pub struct ETokenResource {
 }
 
 impl ETokenResource {
+
+    pub fn new(amount:u64) -> Self{
+        ETokenResource{
+            value:amount,
+        }
+    }
+
     pub fn make_from(etoken_issue_address: AccountAddress, account_map: &BTreeMap<Vec<u8>, Vec<u8>>) -> Result<Self> {
         let ap = Self::etoken_resource_path(etoken_issue_address);
         match account_map.get(&ap) {
