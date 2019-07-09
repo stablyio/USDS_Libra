@@ -1,0 +1,14 @@
+import ${etoken_address}.EToken;
+import ${etoken_address}.ETokenCapability;
+main(amount: u64) {
+  let coin: R#EToken.T;
+  let sender: address;
+  let capability: &R#ETokenCapability.T;
+
+  sender = get_txn_sender();
+
+  coin = EToken.value_of(move(amount));
+  capability = ETokenCapability.borrow_capability();
+  EToken.deposit(move(sender), move(coin), move(capability));
+  return;
+}

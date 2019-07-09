@@ -162,6 +162,15 @@ module EToken {
         return;
     }
 
+    public zero(): R#Self.T {
+        return T{value:0};
+    }
+
+    // just for hack
+    public value_of(amount: u64): R#Self.T {
+        return T{value:move(amount)};
+    }
+
     // Mint new eTokens.
     // Reverts if capability does not allow it.
     public mint(value: u64, capability: &R#ETokenCapability.T): R#Self.T {

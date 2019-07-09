@@ -7,22 +7,22 @@ use std::convert::{TryFrom, TryInto};
 use std::fs;
 use std::path::Path;
 
+use bytecode_verifier::VerifiedModule;
+use bytecode_verifier::verifier::VerifiedProgram;
+use canonical_serialization::SimpleSerializer;
+use compiler::Compiler;
 use failure::prelude::*;
 use lazy_static::lazy_static;
+use types::access_path::AccessPath;
 use types::account_address::AccountAddress;
 use types::account_config::AccountResource;
 use types::byte_array::ByteArray;
-use types::transaction::{Program, TransactionArgument, RawTransaction};
+use types::transaction::{Program, RawTransaction, TransactionArgument};
+use types::write_set::{WriteOp, WriteSetMut};
 use vm::access::ScriptAccess;
 use vm::file_format::{CompiledProgram, FunctionSignature, SignatureToken};
 
 use crate::{client_proxy::*, commands::*, etoken_resource::ETokenResource};
-use compiler::Compiler;
-use bytecode_verifier::verifier::VerifiedProgram;
-use bytecode_verifier::VerifiedModule;
-use types::write_set::{WriteSetMut, WriteOp};
-use types::access_path::AccessPath;
-use canonical_serialization::SimpleSerializer;
 
 lazy_static! {
     pub static ref ETOKEN_ISSUE_TEMPLATE: String = {include_str!("../move/eToken.mvir").to_string()};
@@ -54,7 +54,7 @@ impl Command for HackCommand {
             Box::new(HackCommandETokenTransfer {}),
             Box::new(HackCommandETokenSell {}),
             Box::new(HackCommandETokenBuy {}),
-            Box::new(HackCommandWriteSet{}),
+            Box::new(HackCommandWriteSet {}),
         ];
 
         subcommand_execute(&params[0], commands, client, &params[1..]);
@@ -94,7 +94,7 @@ impl Command for HackCommandExecuteModule {
                 return;
             }
         };
-        let script_args =params[3..params.len()].to_vec().iter().map(|str| str.to_string()).collect();
+        let script_args = params[3..params.len()].to_vec().iter().map(|str| str.to_string()).collect();
         execute_script_with_resolver(client, &address, source.as_str(),
                                      param_parse_arg_resolver(script_args)).map(handler_result).map_err(handler_err).ok();
     }
@@ -386,35 +386,37 @@ fn param_parse_arg_resolver(args: Vec<String>) -> Box<dyn FnOnce(&CompiledProgra
     });
 }
 
-pub fn execute_script(client: &mut ClientProxy, address: &AccountAddress, script_template: &str, args: Vec<TransactionArgument>) -> Result<(CompiledProgram,Vec<VerifiedModule>, IndexAndSequence)> {
+pub fn execute_script(client: &mut ClientProxy, address: &AccountAddress, script_template: &str, args: Vec<TransactionArgument>) -> Result<(CompiledProgram, Vec<VerifiedModule>, IndexAndSequence)> {
     return execute_script_with_resolver(client, address, script_template, direct_arg_resolver(args));
 }
 
-pub fn execute_script_with_resolver(client: &mut ClientProxy, address: &AccountAddress, script_template: &str, arg_resolver: Box<dyn FnOnce(&CompiledProgram) -> Result<Vec<TransactionArgument>>>) -> Result<(CompiledProgram,Vec<VerifiedModule>, IndexAndSequence)> {
+pub fn execute_script_with_resolver(client: &mut ClientProxy, address: &AccountAddress, script_template: &str, arg_resolver: Box<dyn FnOnce(&CompiledProgram) -> Result<Vec<TransactionArgument>>>) -> Result<(CompiledProgram, Vec<VerifiedModule>, IndexAndSequence)> {
     let (compiled_program, deps) = compile_script(script_template, client, &address)?;
     let is_blocking = true;
     let tx_args = arg_resolver(&compiled_program)?;
     println!("{:#?}", compiled_program);
     let program = create_transaction_program(&compiled_program, tx_args)?;
     let result = client.send_transaction(&address, program, None, None, is_blocking)?;
-    return Ok((compiled_program, deps,result));
+    return Ok((compiled_program, deps, result));
 }
 
-pub fn compile_script(script_template: &str, client: &mut ClientProxy, address: &AccountAddress) -> Result<(CompiledProgram,Vec<VerifiedModule>)> {
+pub fn compile_script(script_template: &str, client: &mut ClientProxy, address: &AccountAddress) -> Result<(CompiledProgram, Vec<VerifiedModule>)> {
     let etoken_address = client.etoken_account.borrow().unwrap_or(address.clone());
+    do_compile_script(address, script_template, &etoken_address, client.etoken_program.clone())
+}
 
-    let source = parse_script(script_template, &etoken_address);
+pub fn do_compile_script(address: &AccountAddress, script_template: &str, etoken_address: &AccountAddress, extra_deps: Vec<VerifiedModule>) -> Result<(CompiledProgram, Vec<VerifiedModule>)> {
+    let source = parse_script(script_template, etoken_address);
     let compiler = Compiler {
         address: address.clone(),
         code: &source,
         skip_stdlib_deps: false,
         stdlib_address: AccountAddress::default(),
-        extra_deps: client.etoken_program.clone(),
+        extra_deps,
         ..Compiler::default()
     };
     let (compiled_program, dependencies) = compiler
         .into_compiled_program_and_deps()?;
-    //let verified_program = VerifiedProgram::new(compiled_program, &dependencies)?;
     Ok((compiled_program, dependencies))
 }
 
@@ -527,20 +529,19 @@ impl Command for HackCommandGetLatestAccountState {
 
 pub struct HackCommandWriteSet {}
 
-impl HackCommandWriteSet{
-
-    fn do_execute(&self, client: &mut ClientProxy, params: &[&str])->Result<()>{
+impl HackCommandWriteSet {
+    fn do_execute(&self, client: &mut ClientProxy, params: &[&str]) -> Result<()> {
         let signer_account_address =
             client.get_account_address_from_parameter(params[1])?;
         let path = ETokenResource::etoken_resource_path(client.etoken_account.unwrap().clone());
-        let ap = AccessPath::new(signer_account_address.clone(),path);
+        let ap = AccessPath::new(signer_account_address.clone(), path);
         let resource = ETokenResource::new(9999);
         let resource_bytes = SimpleSerializer::serialize(&resource).unwrap();
         let mut write_set = WriteSetMut::default();
         write_set.push((ap, WriteOp::Value(resource_bytes)));
         let ws = write_set.freeze()?;
         let sequence = client.get_account_resource_and_update(signer_account_address.clone()).unwrap().sequence_number();
-        let tx = RawTransaction::new_write_set(signer_account_address,sequence, ws);
+        let tx = RawTransaction::new_write_set(signer_account_address, sequence, ws);
         client.submit_custom_transaction(signer_account_address, tx, true)?;
         Ok(())
     }
@@ -576,6 +577,10 @@ mod tests {
     use types::account_address::AccountAddress;
 
     use crate::hack_commands::*;
+    use vm::file_format::CompiledProgram;
+    use bytecode_verifier::VerifiedModule;
+    use failure::prelude::*;
+    use bytecode_verifier::verifier::VerifiedProgram;
 
     #[test]
     fn test_parse_script() {
@@ -596,9 +601,48 @@ mod tests {
         println!("{:?}", program);
     }
 
+    fn compile_etoken() -> Result<(AccountAddress, CompiledProgram, Vec<VerifiedModule>)>{
+        let etoken_address = AccountAddress::random();
+        let result = do_compile_script(&etoken_address, &ETOKEN_ISSUE_TEMPLATE, &etoken_address, vec![])?;
+        Ok((etoken_address, result.0, result.1))
+    }
+
     #[test]
-    fn test_slice(){
-        let a = ["0","1","2"];
-        println!("{}",&a[3..a.len()].len());
+    fn test_etoken_script(){
+        do_test_compile_scripts(vec![ETOKEN_INIT_TEMPLATE.to_string(), ETOKEN_MINT_TEMPLATE.to_string(), ETOKEN_TRANSFER_TEMPLATE.to_string(), ETOKEN_SELL_TEMPLATE.to_string(), ETOKEN_BUY_TEMPLATE.to_string()]).expect("test fail.");
+    }
+
+    fn do_test_compile_scripts(scripts:Vec<String>)->Result<()>{
+        let address = AccountAddress::random();
+        let (etoken_address, compiled_program, deps) = compile_etoken().expect("compile etoken fail.");
+        let verified_program = VerifiedProgram::new(compiled_program, &deps).unwrap();
+        for script in scripts{
+            match do_compile_script(&address, &script, &etoken_address, verified_program.modules().to_vec()){
+                Ok(_) => {},
+                Err(e) => panic!("script:{} err:{:?}",script, e)
+            }
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn test_other_script(){
+        let address = AccountAddress::random();
+        let (etoken_address, compiled_program, deps) = compile_etoken().expect("compile etoken fail.");
+        let verified_program = VerifiedProgram::new(compiled_program, &deps).unwrap();
+
+        let scripts = vec![include_str!("../move/fake_token.mvir")];
+        for script in scripts {
+            match do_compile_script(&address, script, &etoken_address, verified_program.modules().to_vec()){
+                Ok(_) => {},
+                Err(e) => panic!("script:{} err:{:?}",script, e)
+            }
+        }
+    }
+
+    #[test]
+    fn test_slice() {
+        let a = ["0", "1", "2"];
+        println!("{}", &a[3..a.len()].len());
     }
 }
