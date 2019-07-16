@@ -1,0 +1,244 @@
+modules:
+
+module Channel {
+
+    import 0x0.LibraAccount;
+    import 0x0.LibraCoin;
+
+    // Move resource not support collection, so only support one channel per user currently.
+    resource T {
+        other: address,
+        coin: R#LibraCoin.T,
+    }
+
+    resource Proof {
+        version: u64,
+        self_balance: u64,
+        other_balance: u64,
+        self_signature: bytearray,
+        other_signature: bytearray,
+    }
+
+    resource ClosedChannel {
+        other: address,
+        coin: R#LibraCoin.T,
+        height: u64,
+    }
+
+    //Open channel
+    public open(other: address,deposit: u64){
+        let channel: R#Self.T;
+        let other_channel: &mut R#Self.T;
+        let coin: R#LibraCoin.T;
+        let exist: bool;
+        let sender: address;
+
+        sender = get_txn_sender();
+
+        exist = exists<T>(copy(sender));
+        // currently only support on channel per user.
+        assert(move(exist) == false, 2);
+
+        coin = LibraAccount.withdraw_from_sender(move(deposit));
+        channel = T{other: copy(other), coin: move(coin)};
+        move_to_sender<T>(move(channel));
+        return;
+    }
+
+    public close_with_proof(other: address, version: u64, self_balance:u64, other_balance:u64, self_signature: bytearray, other_signature: bytearray){
+        let proof: R#Self.Proof;
+
+        Self.close(copy(other));
+        //TODO check signature
+        proof = Proof{version:move(version),self_balance:move(self_balance),other_balance:move(other_balance),self_signature:move(self_signature),other_signature:move(other_signature)};
+        move_to_sender<Proof>(move(proof));
+        return;
+    }
+
+    public close(other_arg: address){
+        let sender: address;
+        let channel_other: address;
+        let channel: R#Self.T;
+        let closed_channel: R#Self.ClosedChannel;
+        let coin: R#LibraCoin.T;
+        let height: u64;
+        let other: address;
+
+        sender = get_txn_sender();
+        // Move currently not implements get_height native function.
+        //height = get_height();
+        height = 1;
+
+        channel = move_from<T>(copy(sender));
+        T {other, coin} = move(channel);
+
+        assert(move(other_arg) == copy(other), 2);
+
+        closed_channel = ClosedChannel{other:move(other), coin: move(coin), height:move(height)};
+        move_to_sender<ClosedChannel>(move(closed_channel));
+        return;
+    }
+
+
+    public settle(other: address){
+        let sender: address;
+        let channel_closed: bool;
+        let other_channel_exist: bool;
+        let other_channel_closed: bool;
+        //let closed_channel_ref: &mut R#Self.ClosedChannel;
+        let self_proof_exist: bool;
+        let self_proof: R#Self.Proof;
+        let self_proof_ref: &R#Self.Proof;
+        let other_proof_exist: bool;
+        let other_proof: R#Self.Proof;
+        let other_proof_ref: &R#Self.Proof;
+        //let proof_ref: &R#Self.Proof;
+        let self_proof_version: u64;
+        let other_proof_version: u64;
+
+        sender = get_txn_sender();
+        channel_closed = exists<ClosedChannel>(copy(sender));
+        assert(copy(channel_closed), 2);
+
+        //closed_channel_ref = borrow_global<ClosedChannel>(copy(sender));
+
+        other_channel_exist = exists<T>(copy(other));
+        other_channel_closed = exists<ClosedChannel>(copy(other));
+
+        //TODO check height
+        if(copy(other_channel_exist)){
+            //if wait height enough, directly settle.
+            Self.do_settle(copy(sender));
+            return;
+        }
+
+        if(!copy(other_channel_closed)){
+            //other channel is not exist, and not closed, so this channel is semi-channel, directly settle.
+            Self.do_settle(copy(sender));
+            return;
+        }
+            //check proof
+        self_proof_exist = exists<Proof>(copy(sender));
+        other_proof_exist = exists<Proof>(copy(other));
+        //both proof is not exist, settle each other directly.
+        if(!copy(self_proof_exist) && !copy(other_proof_exist)){
+            Self.do_settle(copy(sender));
+            Self.do_settle(copy(other));
+            return;
+        }
+        //both proof exist, use big version proof.
+        if(copy(self_proof_exist) && copy(other_proof_exist)){
+            self_proof = move_from<Proof>(copy(sender));
+            other_proof = move_from<Proof>(copy(other)); 
+            self_proof_ref = &self_proof;
+            other_proof_ref = &other_proof;
+            self_proof_version = *&copy(self_proof_ref).version;
+            other_proof_version = *&copy(other_proof_ref).version;
+            if( move(self_proof_version) >= move(other_proof_version)){
+                Self.do_settle_with_proof(move(self_proof_ref), copy(sender), copy(other));
+                release(move(other_proof_ref));
+            }else {
+                Self.do_settle_with_proof(move(other_proof_ref), copy(other), copy(sender));
+                release(move(self_proof_ref));
+            }
+            Self.destroy_proof(move(self_proof));
+            Self.destroy_proof(move(other_proof));
+            return;
+        }
+
+        if(move(self_proof_exist)){
+            self_proof = move_from<Proof>(copy(sender));
+            self_proof_ref = &self_proof;
+            Self.do_settle_with_proof(move(self_proof_ref), copy(sender), copy(other));
+            Self.destroy_proof(move(self_proof));
+            return;
+        }
+
+        if(move(other_proof_exist)){
+            other_proof = move_from<Proof>(copy(other));
+            other_proof_ref = &other_proof;
+            Self.do_settle_with_proof(move(other_proof_ref), copy(other), copy(sender));
+            Self.destroy_proof(move(other_proof));
+            return;
+        }
+
+        return;
+    }
+    
+
+
+    destroy_proof(proof: R#Self.Proof){
+        let version: u64;
+        let self_balance: u64;
+        let other_balance: u64;
+        let self_signature: bytearray;
+        let other_signature: bytearray;
+
+        Proof{version, self_balance, other_balance, self_signature, other_signature} = move(proof);
+        return;
+    }
+
+    do_settle_with_proof(proof: &R#Self.Proof, self_addr: address, other_addr: address){
+        let self_coin: R#LibraCoin.T;
+        let other_coin: R#LibraCoin.T;
+        let self_closed_channel: R#Self.ClosedChannel;
+        let other_closed_channel: R#Self.ClosedChannel;
+        let coin: R#LibraCoin.T;
+        let coin_ref: &R#LibraCoin.T;
+        let total: u64;
+        let self_balance: u64;
+        let other_balance: u64;
+        let total_coin: u64;
+
+        self_balance = *&copy(proof).self_balance;
+        other_balance = *&copy(proof).other_balance; 
+        total = copy(self_balance) + copy(other_balance);
+        
+        self_closed_channel = move_from<ClosedChannel>(copy(self_addr));
+        other_closed_channel = move_from<ClosedChannel>(copy(other_addr));
+        self_coin = Self.move_coin(move(self_closed_channel));
+        other_coin = Self.move_coin(move(other_closed_channel));
+
+        coin = LibraCoin.join(move(self_coin),move(other_coin));
+        coin_ref = &coin;
+
+        total_coin = LibraCoin.value(move(coin_ref));
+
+        assert( move(total_coin) == copy(total),2);
+
+        self_coin, other_coin = LibraCoin.split(move(coin), copy(self_balance));
+
+        LibraAccount.deposit(move(self_addr), move(self_coin));
+        LibraAccount.deposit(move(other_addr), move(other_coin));
+        release(move(proof));
+        return;
+    }
+
+    do_settle(addr:address){
+        let closed_channel: R#Self.ClosedChannel;
+        let other: address;
+        let height: u64;
+        let coin: R#LibraCoin.T;
+
+        closed_channel = move_from<ClosedChannel>(copy(addr));
+        ClosedChannel{other,coin,height} = move(closed_channel);
+        LibraAccount.deposit(copy(addr), move(coin));
+        return;
+    }
+
+    move_coin(closed_channel:R#Self.ClosedChannel): R#LibraCoin.T{
+        let other:address;
+        let coin:R#LibraCoin.T;
+        let height:u64;
+
+        ClosedChannel{other,coin,height} = move(closed_channel);
+        return move(coin);
+    }
+
+}
+
+script:
+
+main(){
+    return;
+}

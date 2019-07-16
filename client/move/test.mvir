@@ -1,0 +1,28 @@
+modules:
+
+module Test{
+    
+    resource T{
+        value: u64,
+    }
+
+    public test_move_by_condition(condition:bool){
+        let r : R#Self.T;
+        let sender : address;
+        let value: u64;
+        sender = get_txn_sender();
+        if(move(condition)){
+            r = move_from<T>(copy(sender));
+            T{value} = move(r);
+        }else{
+            //do nothing.
+        }
+        return;
+    }
+}
+
+script:
+
+main(){
+    return;
+}
