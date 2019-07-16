@@ -25,6 +25,31 @@ module Addressbook {
         move_to_sender<T>(move(entry));
         return;
     }
+
+    public delete(){
+        let sender: address;
+        let name: bytearray;
+        let addr: address;
+        let city: bytearray;
+        let entry_exists: bool;
+        let entry: R#Self.T;
+        
+        sender = get_txn_sender();
+        entry_exists = exists<T>(copy(sender));
+        if (move(entry_exists)) {
+            entry = move_from<T>(move(sender));
+            T{name,addr,city} = move(entry);
+        }
+        return; 
+    }
+
+    public exist():bool{
+        let sender: address;
+        let entry_exists: bool;
+        sender = get_txn_sender();
+        entry_exists = exists<T>(copy(sender));
+        return move(entry_exists);
+    }
 }
 
 script:
@@ -32,6 +57,13 @@ script:
 import Transaction.Addressbook;
 
 main(name:bytearray, addr:address, city:bytearray){
+    let exist: bool;
+
     Addressbook.upsert(move(name), move(addr), move(city));
+    exist = Addressbook.exist();
+    assert(move(exist),2);
+    Addressbook.delete();
+    exist = Addressbook.exist();
+    assert(!move(exist),2);
     return;
 }
