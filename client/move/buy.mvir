@@ -1,5 +1,5 @@
-import ${etoken_address}.EToken;
-import ${etoken_address}.ETokenCapability;
+import ${etoken}.EToken;
+import ${etoken}.ETokenCapability;
 main (order_address: address) {
   EToken.buy_token(move(order_address));
   return;

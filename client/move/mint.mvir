@@ -1,5 +1,5 @@
-import ${etoken_address}.EToken;
-import ${etoken_address}.ETokenCapability;
+import ${etoken}.EToken;
+import ${etoken}.ETokenCapability;
 main(amount: u64) {
     let sender: address;
     let capability: &R#ETokenCapability.T;

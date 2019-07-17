@@ -30,7 +30,7 @@ module ETokenCapability {
 
         // Publish owner ETokenCapability if sender is the privileged account
         // Uncomment the following line in production and use a real owner account: if (move(sender) == 0x0) {
-        if (move(sender) == ${etoken_address}) {
+        if (move(sender) == ${etoken}) {
             // Always branch to here when testing, otherwise the test can't complete as the sender address is randomly chosen.
             Self.grant_owner_capability();
         }

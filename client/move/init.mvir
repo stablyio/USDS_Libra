@@ -1,6 +1,6 @@
 // init etoken resource, account should first init, then use etoken.
-import ${etoken_address}.EToken;
-import ${etoken_address}.ETokenCapability;
+import ${etoken}.EToken;
+import ${etoken}.ETokenCapability;
 main() {
     ETokenCapability.publish();
     EToken.publish();
