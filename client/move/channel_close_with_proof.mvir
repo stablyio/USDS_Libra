@@ -1,0 +1,5 @@
+import ${channel}.Channel;
+main (other: address, version: u64, self_balance:u64, other_balance:u64, self_signature: bytearray, other_signature: bytearray) {
+  Channel.close_with_proof(move(other), move(version), move(self_balance), move(other_balance), move(self_signature), move(other_signature));
+  return;
+}

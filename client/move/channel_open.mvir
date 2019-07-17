@@ -1,0 +1,5 @@
+import ${channel}.Channel;
+main (other: address, amount: u64) {
+  Channel.open(move(other), move(amount));
+  return;
+}

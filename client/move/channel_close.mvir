@@ -1,0 +1,5 @@
+import ${channel}.Channel;
+main (other: address) {
+  Channel.close(move(other));
+  return;
+}
