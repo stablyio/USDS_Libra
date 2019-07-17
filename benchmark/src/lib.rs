@@ -125,6 +125,7 @@ impl Benchmarker {
             key_pair: Some(faucet_account_keypair),
             sequence_number,
             status,
+            channels: vec![],
         }
     }
 
@@ -180,6 +181,7 @@ impl Benchmarker {
             key_pair: None,
             sequence_number: 0,
             status: AccountStatus::Local,
+            channels: vec![],
         }
     }
 
