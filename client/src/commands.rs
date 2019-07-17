@@ -6,6 +6,7 @@ use crate::{
     submit_transaction_command::SubmitTransactionFromDiskCommand,
     transfer_commands::TransferCommand,
     hack_commands::HackCommand,
+    channel_commands::ChannelCommand,
 };
 
 use failure::prelude::*;
@@ -66,6 +67,7 @@ pub fn get_commands() -> (
         Arc::new(TransferCommand {}),
         Arc::new(SubmitTransactionFromDiskCommand {}),
         Arc::new(HackCommand {}),
+        Arc::new(ChannelCommand{}),
     ];
     let mut alias_to_cmd = HashMap::new();
     for command in &commands {

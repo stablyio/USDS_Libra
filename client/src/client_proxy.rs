@@ -81,6 +81,14 @@ pub struct IndexAndSequence {
     pub sequence_number: u64,
 }
 
+/// For registry local module
+#[derive(Debug,Clone)]
+pub struct ModuleRegistryEntry{
+    pub name: String,
+    pub account: AccountAddress,
+    pub modules: Vec<VerifiedModule>,
+}
+
 /// Proxy handling CLI commands/inputs.
 pub struct ClientProxy {
     /// client for admission control interface.
@@ -97,10 +105,9 @@ pub struct ClientProxy {
     wallet: WalletLibrary,
     /// Whether to sync with validator on account creation.
     sync_on_wallet_recovery: bool,
-    /// etoken issue account
-    pub etoken_account: Option<AccountAddress>,
-    /// etoken Module
-    pub etoken_program: Vec<VerifiedModule>,
+
+    /// module registry
+    pub module_registry: HashMap<String, ModuleRegistryEntry>,
 }
 
 impl ClientProxy {
@@ -162,9 +169,20 @@ impl ClientProxy {
             faucet_account,
             wallet: Self::get_libra_wallet(mnemonic_file)?,
             sync_on_wallet_recovery,
-            etoken_account: None,
-            etoken_program: vec![],
+            module_registry: HashMap::new(),
         })
+    }
+
+    pub fn registry_module(&mut self, name: String, account: AccountAddress, modules: Vec<VerifiedModule>){
+        self.module_registry.insert(name.clone(), ModuleRegistryEntry{name,account, modules});
+    }
+
+    pub fn exist_module(&self, name: &str) -> bool {
+        return self.module_registry.contains_key(name);
+    }
+
+    pub fn get_module_registry(&self) -> Vec<ModuleRegistryEntry>{
+        return self.module_registry.iter().map(|(_k,v)|v.clone()).collect::<Vec<_>>()
     }
 
     fn get_account_ref_id(&self, sender_account_address: &AccountAddress) -> Result<usize> {
@@ -789,6 +807,11 @@ impl ClientProxy {
         get_account_resource_or_default(&account_state.0)
     }
 
+    /// Get account data by address
+    pub fn get_account_data(&self, address:AccountAddress) -> Result<AccountData> {
+        Self::get_account_data_from_address(&self.client, address, false, None)
+    }
+
     /// Get account using specific address.
     /// Sync with validator for account sequence number in case it is already created on chain.
     /// This assumes we have a very low probability of mnemonic word conflict.
@@ -820,6 +843,7 @@ impl ClientProxy {
             key_pair,
             sequence_number,
             status,
+            channels: vec![],
         })
     }
 

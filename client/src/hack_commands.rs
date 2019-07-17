@@ -23,6 +23,7 @@ use vm::access::ScriptAccess;
 use vm::file_format::{CompiledProgram, FunctionSignature, SignatureToken};
 
 use crate::{client_proxy::*, commands::*, etoken_resource::ETokenResource};
+use itertools::Itertools;
 
 lazy_static! {
     pub static ref ETOKEN_ISSUE_TEMPLATE: String = {include_str!("../move/eToken.mvir").to_string()};
@@ -126,9 +127,8 @@ impl Command for HackCommandETokenIssue {
         };
 
         execute_script(client, &address, &ETOKEN_ISSUE_TEMPLATE, vec![]).map(|(compiled_program, deps, seq)| {
-            client.etoken_account = Some(address.clone());
             let verified_program = VerifiedProgram::new(compiled_program.clone(), &deps).unwrap();
-            client.etoken_program.append(&mut verified_program.modules().to_vec());
+            client.registry_module("etoken".to_string(), address.clone(), verified_program.modules().to_vec());
             (compiled_program, deps, seq)
         }).map(handler_result).map_err(handler_err).ok();
     }
@@ -152,7 +152,7 @@ impl Command for HackCommandETokenInit {
             println!("Invalid number of arguments for command");
             return;
         }
-        if client.etoken_account.is_none() {
+        if !client.exist_module("etoken") {
             println!("Please issue etoken first.");
             return;
         }
@@ -185,7 +185,7 @@ impl Command for HackCommandETokenMint {
             println!("Invalid number of arguments for command");
             return;
         }
-        if client.etoken_account.is_none() {
+        if !client.exist_module("etoken")  {
             println!("Please issue etoken first.");
             return;
         }
@@ -226,7 +226,7 @@ impl Command for HackCommandETokenTransfer {
             println!("Invalid number of arguments for command");
             return;
         }
-        if client.etoken_account.is_none() {
+        if !client.exist_module("etoken")  {
             println!("Please issue etoken first.");
             return;
         }
@@ -274,7 +274,7 @@ impl Command for HackCommandETokenSell {
             println!("Invalid number of arguments for command");
             return;
         }
-        if client.etoken_account.is_none() {
+        if !client.exist_module("etoken")  {
             println!("Please issue etoken first.");
             return;
         }
@@ -321,7 +321,7 @@ impl Command for HackCommandETokenBuy {
             println!("Invalid number of arguments for command");
             return;
         }
-        if client.etoken_account.is_none() {
+        if !client.exist_module("etoken")  {
             println!("Please issue etoken first.");
             return;
         }
@@ -401,12 +401,15 @@ pub fn execute_script_with_resolver(client: &mut ClientProxy, address: &AccountA
 }
 
 pub fn compile_script(script_template: &str, client: &mut ClientProxy, address: &AccountAddress) -> Result<(CompiledProgram, Vec<VerifiedModule>)> {
-    let etoken_address = client.etoken_account.borrow().unwrap_or(address.clone());
-    do_compile_script(address, script_template, &etoken_address, client.etoken_program.clone())
+    let module_registry = client.get_module_registry();
+    do_compile_script(address, script_template, &module_registry)
 }
 
-pub fn do_compile_script(address: &AccountAddress, script_template: &str, etoken_address: &AccountAddress, extra_deps: Vec<VerifiedModule>) -> Result<(CompiledProgram, Vec<VerifiedModule>)> {
-    let source = parse_script(script_template, etoken_address);
+pub fn do_compile_script(address: &AccountAddress, script_template: &str, module_registry: &Vec<ModuleRegistryEntry>) -> Result<(CompiledProgram, Vec<VerifiedModule>)> {
+    let source = parse_script(script_template, module_registry);
+    //let mut extra_deps:Vec<VerifiedModule> = vec![];
+    let extra_deps = module_registry.iter().map(|entry|entry.modules.as_slice()).collect_vec().as_slice().concat();
+        //.fold(extra_deps, |c, module|{c.extend(module);return c;});
     let compiler = Compiler {
         address: address.clone(),
         code: &source,
@@ -420,10 +423,13 @@ pub fn do_compile_script(address: &AccountAddress, script_template: &str, etoken
     Ok((compiled_program, dependencies))
 }
 
-pub fn parse_script(script_template: &str, etoken_address: &AccountAddress) -> String {
-    let mut address_str = "0x".to_owned();
-    address_str.push_str(etoken_address.to_string().as_str());
-    let script = script_template.replace("${etoken_address}", address_str.as_str());
+pub fn parse_script(script_template: &str, module_registry: &Vec<ModuleRegistryEntry>) -> String {
+    let mut script = script_template.to_string();
+    for module in module_registry{
+        let mut address_str = "0x".to_owned();
+        address_str.push_str(module.account.to_string().as_str());
+        script = script_template.replace(format!("${{{}}}",module.name).as_str(), address_str.as_str());
+    }
     return script;
     //compiler::parser::parse_program(script.as_str())
 }
@@ -456,8 +462,9 @@ impl HackCommandGetLatestAccountState {
                 Some(blob) => {
                     let account_btree = blob.borrow().try_into()?;
                     let account_resource = AccountResource::make_from(&account_btree).unwrap_or(AccountResource::default());
-                    let etoken_resource = match client.etoken_account {
-                        Some(address) => match ETokenResource::make_from(address, &account_btree) {
+                    let etoken_module = client.module_registry.get("etoken");
+                    let etoken_resource = match etoken_module {
+                        Some(entry) => match ETokenResource::make_from(entry.account.clone(), &account_btree) {
                             Ok(res) => Some(res),
                             Err(_) => None,
                         },
@@ -533,7 +540,8 @@ impl HackCommandWriteSet {
     fn do_execute(&self, client: &mut ClientProxy, params: &[&str]) -> Result<()> {
         let signer_account_address =
             client.get_account_address_from_parameter(params[1])?;
-        let path = ETokenResource::etoken_resource_path(client.etoken_account.unwrap().clone());
+        let etoken_module = client.module_registry.get("etoken").unwrap();
+        let path = ETokenResource::etoken_resource_path(etoken_module.account.clone());
         let ap = AccessPath::new(signer_account_address.clone(), path);
         let resource = ETokenResource::new(9999);
         let resource_bytes = SimpleSerializer::serialize(&resource).unwrap();
@@ -558,7 +566,7 @@ impl Command for HackCommandWriteSet {
         "Directly save resource to account, this command will fail because of RejectedWriteSet error"
     }
     fn execute(&self, client: &mut ClientProxy, params: &[&str]) {
-        if client.etoken_account.is_none() {
+        if !client.exist_module("etoken")  {
             println!("Please issue etoken first.");
             return;
         }
@@ -577,6 +585,7 @@ mod tests {
     use types::account_address::AccountAddress;
 
     use crate::hack_commands::*;
+    use crate::client_proxy::*;
     use vm::file_format::CompiledProgram;
     use bytecode_verifier::VerifiedModule;
     use failure::prelude::*;
@@ -587,24 +596,33 @@ mod tests {
         //println!("{:?}", AccountAddress::random());
         //println!("{:?}",AccountAddress::default().to_string());
 
-        let program = parse_script(&ETOKEN_ISSUE_TEMPLATE, &AccountAddress::random());
+        let entry = ModuleRegistryEntry{name:"etoken".to_string(), account: AccountAddress::random(), modules:vec![]};
+        let module_registry = vec![entry];
+
+        let program = parse_script(&ETOKEN_ISSUE_TEMPLATE, &module_registry);
         println!("{:?}", program);
-        let program = parse_script(&ETOKEN_INIT_TEMPLATE, &AccountAddress::random());
+        let program = parse_script(&ETOKEN_INIT_TEMPLATE, &module_registry);
         println!("{:?}", program);
-        let program = parse_script(&ETOKEN_MINT_TEMPLATE, &AccountAddress::random());
+        let program = parse_script(&ETOKEN_MINT_TEMPLATE, &module_registry);
         println!("{:?}", program);
-        let program = parse_script(&ETOKEN_TRANSFER_TEMPLATE, &AccountAddress::random());
+        let program = parse_script(&ETOKEN_TRANSFER_TEMPLATE, &module_registry);
         println!("{:?}", program);
-        let program = parse_script(&ETOKEN_SELL_TEMPLATE, &AccountAddress::random());
+        let program = parse_script(&ETOKEN_SELL_TEMPLATE, &module_registry);
         println!("{:?}", program);
-        let program = parse_script(&ETOKEN_BUY_TEMPLATE, &AccountAddress::random());
+        let program = parse_script(&ETOKEN_BUY_TEMPLATE, &module_registry);
         println!("{:?}", program);
     }
 
-    fn compile_etoken() -> Result<(AccountAddress, CompiledProgram, Vec<VerifiedModule>)>{
+    fn compile_etoken() -> Result<Vec<ModuleRegistryEntry>>{
         let etoken_address = AccountAddress::random();
-        let result = do_compile_script(&etoken_address, &ETOKEN_ISSUE_TEMPLATE, &etoken_address, vec![])?;
-        Ok((etoken_address, result.0, result.1))
+
+        let mut entry = ModuleRegistryEntry{name:"etoken".to_string(), account: etoken_address.clone(), modules:vec![]};
+
+        let (compiled_program,deps) = do_compile_script(&etoken_address, &ETOKEN_ISSUE_TEMPLATE, &vec![entry.clone()])?;
+        let verified_program = VerifiedProgram::new(compiled_program, &deps).unwrap();
+        entry.modules.append(verified_program.modules().to_vec().as_mut());
+
+        Ok(vec![entry])
     }
 
     #[test]
@@ -614,10 +632,9 @@ mod tests {
 
     fn do_test_compile_scripts(scripts:Vec<String>)->Result<()>{
         let address = AccountAddress::random();
-        let (etoken_address, compiled_program, deps) = compile_etoken().expect("compile etoken fail.");
-        let verified_program = VerifiedProgram::new(compiled_program, &deps).unwrap();
+        let module_registry = compile_etoken().expect("compile etoken fail.");
         for script in scripts{
-            match do_compile_script(&address, &script, &etoken_address, verified_program.modules().to_vec()){
+            match do_compile_script(&address, &script, &module_registry){
                 Ok(_) => {},
                 Err(e) => panic!("script:{} err:{:?}",script, e)
             }
@@ -628,12 +645,11 @@ mod tests {
     #[test]
     fn test_other_script(){
         let address = AccountAddress::random();
-        let (etoken_address, compiled_program, deps) = compile_etoken().expect("compile etoken fail.");
-        let verified_program = VerifiedProgram::new(compiled_program, &deps).unwrap();
+        let module_registry = compile_etoken().expect("compile etoken fail.");
 
         let scripts = vec![include_str!("../move/fake_token.mvir")];
         for script in scripts {
-            match do_compile_script(&address, script, &etoken_address, verified_program.modules().to_vec()){
+            match do_compile_script(&address, script, &module_registry){
                 Ok(_) => {},
                 Err(e) => panic!("script:{} err:{:?}",script, e)
             }

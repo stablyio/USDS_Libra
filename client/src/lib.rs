@@ -23,6 +23,18 @@ pub(crate) mod submit_transaction_command;
 pub(crate) mod transfer_commands;
 pub(crate) mod hack_commands;
 pub(crate) mod etoken_resource;
+pub(crate) mod channel_commands;
+
+/// Offchain data
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+pub struct OffchainData{
+    pub other: AccountAddress,
+    pub version: u64,
+    pub self_balance: u64,
+    pub other_balance: u64,
+    pub self_signature: Vec<u8>,
+    pub other_signature: Vec<u8>,
+}
 
 /// Struct used to store data for each created account.  We track the sequence number
 /// so we can create new transactions easily
@@ -36,6 +48,8 @@ pub struct AccountData {
     pub sequence_number: u64,
     /// Whether the account is initialized on chain, cached local only, or status unknown.
     pub status: AccountStatus,
+    /// Offchain channels.
+    pub channels: Vec<OffchainData>,
 }
 
 /// Enum used to represent account status.
@@ -60,5 +74,13 @@ impl AccountData {
             )),
             None => None,
         }
+    }
+
+    pub fn append_channel(&mut self, channel: OffchainData){
+        self.channels.push(channel);
+    }
+
+    pub fn get_channel(&self, other:&AccountAddress) -> Option<OffchainData>{
+        return self.channels.iter().find(|item|item.other == *other).cloned()
     }
 }
