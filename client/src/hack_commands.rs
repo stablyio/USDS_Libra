@@ -125,8 +125,11 @@ impl Command for HackCommandETokenIssue {
                 return;
             }
         };
-
-        execute_script(client, &address, &ETOKEN_ISSUE_TEMPLATE, vec![]).map(|(compiled_program, deps, seq)| {
+        let mut template: String = ETOKEN_ISSUE_TEMPLATE.clone();
+        let mut etoken_addr = "0x".to_owned();
+        etoken_addr.push_str(address.to_string().as_str());
+        template = template.replace("${etoken}", etoken_addr.as_str());
+        execute_script(client, &address, template.as_str(), vec![]).map(|(compiled_program, deps, seq)| {
             let verified_program = VerifiedProgram::new(compiled_program.clone(), &deps).unwrap();
             client.registry_module("etoken".to_string(), address.clone(), verified_program.modules().to_vec());
             (compiled_program, deps, seq)
@@ -635,7 +638,9 @@ mod tests {
         let module_registry = compile_etoken().expect("compile etoken fail.");
         for script in scripts{
             match do_compile_script(&address, &script, &module_registry){
-                Ok(_) => {},
+                Ok((program,_)) => {
+                    println!("{:#?}",program)
+                },
                 Err(e) => panic!("script:{} err:{:?}",script, e)
             }
         }

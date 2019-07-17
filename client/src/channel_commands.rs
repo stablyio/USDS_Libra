@@ -30,6 +30,7 @@ lazy_static! {
     pub static ref CHANNEL_OPEN_TEMPLATE: String = {include_str!("../move/channel_open.mvir").to_string()};
     pub static ref CHANNEL_CLOSE_TEMPLATE: String = {include_str!("../move/channel_close.mvir").to_string()};
     pub static ref CHANNEL_CLOSE_WITH_PROOF_TEMPLATE: String = {include_str!("../move/channel_close_with_proof.mvir").to_string()};
+    pub static ref CHANNEL_SETTLE_TEMPLATE: String = {include_str!("../move/channel_settle.mvir").to_string()};
 }
 
 
@@ -48,6 +49,7 @@ impl Command for ChannelCommand {
             Box::new(ChannelCommandDeploy {}),
             Box::new(ChannelCommandOpen {}),
             Box::new(ChannelCommandClose {}),
+            Box::new(ChannelCommandSettle{}),
             Box::new(ChannelCommandOffchainTransfer {}),
         ];
 
@@ -59,7 +61,7 @@ pub struct ChannelCommandDeploy {}
 
 impl Command for ChannelCommandDeploy {
     fn get_aliases(&self) -> Vec<&'static str> {
-        vec!["deploy", "deploy"]
+        vec!["deploy", "d"]
     }
     fn get_params_help(&self) -> &'static str {
         "<account_ref_id>"
@@ -94,7 +96,7 @@ pub struct ChannelCommandOpen {}
 
 impl Command for ChannelCommandOpen {
     fn get_aliases(&self) -> Vec<&'static str> {
-        vec!["open", "open"]
+        vec!["open", "o"]
     }
     fn get_params_help(&self) -> &'static str {
         "<account_ref_id>|<account_address> <account_ref_id>|<account_address> <amount>"
@@ -132,7 +134,7 @@ impl Command for ChannelCommandOpen {
                 return;
             }
         };
-        execute_script(client, &address, &ETOKEN_MINT_TEMPLATE, vec![TransactionArgument::Address(other_address), TransactionArgument::U64(amount)]).map(handler_result).map_err(handler_err).ok();
+        execute_script(client, &address, &CHANNEL_OPEN_TEMPLATE, vec![TransactionArgument::Address(other_address), TransactionArgument::U64(amount)]).map(handler_result).map_err(handler_err).ok();
     }
 }
 
@@ -142,13 +144,13 @@ pub struct ChannelCommandClose {}
 
 impl Command for ChannelCommandClose {
     fn get_aliases(&self) -> Vec<&'static str> {
-        vec!["close", "close"]
+        vec!["close", "c"]
     }
     fn get_params_help(&self) -> &'static str {
         "<account_ref_id>|<account_address> <account_ref_id>|<account_address>"
     }
     fn get_description(&self) -> &'static str {
-        "Transfer etoken to an account"
+        "Close a channel."
     }
     fn execute(&self, client: &mut ClientProxy, params: &[&str]) {
         if params.len() != 3 {
@@ -196,12 +198,53 @@ impl Command for ChannelCommandClose {
 }
 
 
+/// Settle channel
+pub struct ChannelCommandSettle {}
+
+impl Command for ChannelCommandSettle {
+    fn get_aliases(&self) -> Vec<&'static str> {
+        vec!["settle", "s"]
+    }
+    fn get_params_help(&self) -> &'static str {
+        "<account_ref_id>|<account_address> <account_ref_id>|<account_address>"
+    }
+    fn get_description(&self) -> &'static str {
+        "Settle an channel"
+    }
+    fn execute(&self, client: &mut ClientProxy, params: &[&str]) {
+        if params.len() != 3 {
+            println!("Invalid number of arguments for command");
+            return;
+        }
+        if !client.exist_module("channel") {
+            println!("Please deploy channel first.");
+            return;
+        }
+        let address = match client.get_account_address_from_parameter(params[1]) {
+            Ok(address) => address,
+            Err(e) => {
+                report_error("get address fail.", e);
+                return;
+            }
+        };
+        let other_address = match client.get_account_address_from_parameter(params[2]) {
+            Ok(address) => address,
+            Err(e) => {
+                report_error("get address fail.", e);
+                return;
+            }
+        };
+        execute_script(client, &address, &CHANNEL_SETTLE_TEMPLATE, vec![TransactionArgument::Address(other_address)]).map(handler_result).map_err(handler_err).ok();
+    }
+}
+
+
 /// Offchain transfer
 pub struct ChannelCommandOffchainTransfer {}
 
 impl Command for ChannelCommandOffchainTransfer {
     fn get_aliases(&self) -> Vec<&'static str> {
-        vec!["transfer", "transfer"]
+        vec!["transfer", "t"]
     }
     fn get_params_help(&self) -> &'static str {
         "<account_ref_id>|<account_address> <account_ref_id>|<account_address> <amount>"

@@ -28,11 +28,17 @@ pub(crate) mod channel_commands;
 /// Offchain data
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct OffchainData{
+    /// channel other party account
     pub other: AccountAddress,
+    /// channel data version
     pub version: u64,
+    /// my balance
     pub self_balance: u64,
+    /// other balance
     pub other_balance: u64,
+    /// self signature
     pub self_signature: Vec<u8>,
+    /// other party signature
     pub other_signature: Vec<u8>,
 }
 
@@ -76,10 +82,12 @@ impl AccountData {
         }
     }
 
+    /// append channel
     pub fn append_channel(&mut self, channel: OffchainData){
         self.channels.push(channel);
     }
 
+    /// get channel
     pub fn get_channel(&self, other:&AccountAddress) -> Option<OffchainData>{
         return self.channels.iter().find(|item|item.other == *other).cloned()
     }

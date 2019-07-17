@@ -84,8 +84,11 @@ pub struct IndexAndSequence {
 /// For registry local module
 #[derive(Debug,Clone)]
 pub struct ModuleRegistryEntry{
+    /// module name
     pub name: String,
+    /// module pub account address
     pub account: AccountAddress,
+    /// module's code
     pub modules: Vec<VerifiedModule>,
 }
 
@@ -173,14 +176,17 @@ impl ClientProxy {
         })
     }
 
+    /// registry a new module
     pub fn registry_module(&mut self, name: String, account: AccountAddress, modules: Vec<VerifiedModule>){
         self.module_registry.insert(name.clone(), ModuleRegistryEntry{name,account, modules});
     }
 
+    /// check module is exist
     pub fn exist_module(&self, name: &str) -> bool {
         return self.module_registry.contains_key(name);
     }
 
+    /// get all module.
     pub fn get_module_registry(&self) -> Vec<ModuleRegistryEntry>{
         return self.module_registry.iter().map(|(_k,v)|v.clone()).collect::<Vec<_>>()
     }
