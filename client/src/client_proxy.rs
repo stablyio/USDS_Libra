@@ -816,7 +816,7 @@ impl ClientProxy {
     }
 
     /// Get account state from validator and update status of account if it is cached locally.
-    fn get_account_state_and_update(
+    pub fn get_account_state_and_update(
         &mut self,
         address: AccountAddress,
     ) -> Result<(Option<AccountStateBlob>, Version)> {

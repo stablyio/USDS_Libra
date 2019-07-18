@@ -182,7 +182,14 @@ impl Command for ChannelCommandClose {
                 return;
             }
         };
-        match account_data.get_channel(&other_address) {
+        let channel = match account_data.get_channel(&other_address){
+            Some(channel) => channel,
+            None => {
+                println!("get channel with address {} fail.", other_address);
+                return;
+            }
+        };
+        match  &channel.data{
             Some(offchain_data) => {
                 let args = vec![TransactionArgument::Address(other_address), TransactionArgument::U64(offchain_data.version),
                                 TransactionArgument::U64(offchain_data.self_balance), TransactionArgument::U64(offchain_data.other_balance),

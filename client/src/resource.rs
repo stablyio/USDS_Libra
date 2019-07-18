@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use serde::export::fmt::{Debug, Display};
+use serde::{Deserialize, Serialize};
 
 use canonical_serialization::{CanonicalDeserialize, CanonicalDeserializer, CanonicalSerialize, CanonicalSerializer, SimpleDeserializer};
 use failure::prelude::*;
@@ -34,7 +34,7 @@ pub enum Resource {
 
 pub const ETOKEN_MODULE_NAME: &str = "EToken";
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct ETokenResource {
     pub value: u64,
 }
@@ -79,7 +79,7 @@ impl CanonicalDeserialize for ETokenResource {
 
 pub const CHANNEL_MODULE_NAME: &str = "Channel";
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct ChannelResource {
     pub other: AccountAddress,
     pub coin: u64,
@@ -120,7 +120,7 @@ impl CanonicalDeserialize for ChannelResource {
 
 pub const CLOSED_STRUCT_NAME: &str = "ClosedChannel";
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct ClosedChannelResource {
     pub other: AccountAddress,
     pub coin: u64,
@@ -166,7 +166,7 @@ impl CanonicalDeserialize for ClosedChannelResource {
 
 pub const PROOF_STRUCT_NAME: &str = "Proof";
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct ProofResource {
     pub version: u64,
     pub self_balance: u64,
