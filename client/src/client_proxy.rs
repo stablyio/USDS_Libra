@@ -45,7 +45,7 @@ use types::{
     validator_verifier::ValidatorVerifier,
 };
 
-use crate::{AccountData, AccountStatus, commands::*, grpc_client::GRPCClient, resource::{Resource,ETokenResource,ChannelResource}};
+use crate::{AccountData, AccountStatus, commands::*, grpc_client::GRPCClient, resource::*};
 
 const CLIENT_WALLET_MNEMONIC_FILE: &str = "client.mnemonic";
 const GAS_UNIT_PRICE: u64 = 0;
@@ -99,18 +99,27 @@ pub struct ModuleRegistryEntry {
 impl ModuleRegistryEntry {
     pub fn get_resource(&self, data: &BTreeMap<Vec<u8>, Vec<u8>>) -> Vec<Resource> {
         let mut resources = vec![];
-        let resource = match self.name.as_str() {
+        match self.name.as_str() {
             "etoken" => {
-                Resource::EToken(ETokenResource::make_from(self.account.clone(), data).ok())
+                resources.push(Resource::EToken(ETokenResource::make_from(self.account.clone(), data).ok()));
             },
-            "channel" => Resource::Channel(ChannelResource::make_from(self.account.clone(), data).map_err(|e|{
-                //println!("get channel resource error:{:?}",e)
-            }).ok()),
+            "channel" => {
+                resources.push(Resource::Channel(ChannelResource::make_from(self.account.clone(), data).map_err(|e|{
+                    //println!("get channel resource error:{:?}",e)
+                }).ok()));
+
+                resources.push(Resource::ClosedChannel(ClosedChannelResource::make_from(self.account.clone(), data).map_err(|e|{
+                    //println!("get channel resource error:{:?}",e)
+                }).ok()));
+
+                resources.push(Resource::Proof(ProofResource::make_from(self.account.clone(), data).map_err(|e|{
+                    //println!("get channel resource error:{:?}",e)
+                }).ok()));
+            },
             _ => {
                 panic!("unsupported resource:{}", self.name.clone())
             }
         };
-        resources.push(resource);
         return resources;
     }
 }
