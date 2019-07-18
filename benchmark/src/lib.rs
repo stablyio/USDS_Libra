@@ -120,13 +120,11 @@ impl Benchmarker {
         let (sequence_number, status) = self
             .get_account_state_from_validator(address)
             .expect("failed to sync faucet account with validator");
-        AccountData {
+        AccountData::new(
             address,
-            key_pair: Some(faucet_account_keypair),
+            Some(faucet_account_keypair),
             sequence_number,
-            status,
-            channels: vec![],
-        }
+            status)
     }
 
     /// Request and wait for account's (sequence_number, account_status) from a validator.
@@ -176,13 +174,10 @@ impl Benchmarker {
             .wallet
             .new_address()
             .expect("failed to generate account address");
-        AccountData {
-            address,
-            key_pair: None,
-            sequence_number: 0,
-            status: AccountStatus::Local,
-            channels: vec![],
-        }
+        AccountData::new(
+            address, None,
+            0,
+            AccountStatus::Local)
     }
 
     /// Generate a number of random accounts and minting these accounts using self's AC client(s).
