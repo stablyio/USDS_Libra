@@ -1,39 +1,42 @@
 // Copyright (c) The Libra Core Contributors
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::{commands::*, grpc_client::GRPCClient, AccountData, AccountStatus};
-use admission_control_proto::proto::admission_control::SubmitTransactionRequest;
-use config::trusted_peers::TrustedPeersConfig;
-use crypto::signing::KeyPair;
-use failure::prelude::*;
-use futures::{future::Future, stream::Stream};
-use hyper;
-use libra_wallet::{io_utils, wallet_library::WalletLibrary};
-use logger::prelude::*;
-use num_traits::{
-    cast::{FromPrimitive, ToPrimitive},
-    identities::Zero,
-};
-use proto_conv::{FromProtoBytes, IntoProto};
-use rust_decimal::Decimal;
 use std::{
     collections::HashMap,
     convert::TryFrom,
     fmt,
     fs::{self, File},
-    io::{stdout, Read, Write},
+    io::{Read, stdout, Write},
     path::Path,
     str::FromStr,
     sync::Arc,
     thread, time,
 };
+use std::collections::BTreeMap;
+
+use futures::{future::Future, stream::Stream};
+use hyper;
+use num_traits::{
+    cast::{FromPrimitive, ToPrimitive},
+    identities::Zero,
+};
+use rust_decimal::Decimal;
 use tokio::{self, runtime::Runtime};
+
+use admission_control_proto::proto::admission_control::SubmitTransactionRequest;
+use bytecode_verifier::VerifiedModule;
+use config::trusted_peers::TrustedPeersConfig;
+use crypto::signing::KeyPair;
+use failure::prelude::*;
+use libra_wallet::{io_utils, wallet_library::WalletLibrary};
+use logger::prelude::*;
+use proto_conv::{FromProtoBytes, IntoProto};
 use types::{
     access_path::AccessPath,
     account_address::{AccountAddress, ADDRESS_LENGTH},
     account_config::{
-        account_received_event_path, account_sent_event_path, association_address,
-        get_account_resource_or_default, AccountResource,
+        account_received_event_path, account_sent_event_path, AccountResource,
+        association_address, get_account_resource_or_default,
     },
     account_state_blob::{AccountStateBlob, AccountStateWithProof},
     contract_event::{ContractEvent, EventWithProof},
@@ -41,7 +44,8 @@ use types::{
     transaction_helpers::{create_signed_txn, TransactionSigner},
     validator_verifier::ValidatorVerifier,
 };
-use bytecode_verifier::VerifiedModule;
+
+use crate::{AccountData, AccountStatus, commands::*, grpc_client::GRPCClient, resource::{Resource,ETokenResource,ChannelResource}};
 
 const CLIENT_WALLET_MNEMONIC_FILE: &str = "client.mnemonic";
 const GAS_UNIT_PRICE: u64 = 0;
@@ -82,14 +86,33 @@ pub struct IndexAndSequence {
 }
 
 /// For registry local module
-#[derive(Debug,Clone)]
-pub struct ModuleRegistryEntry{
+#[derive(Debug, Clone)]
+pub struct ModuleRegistryEntry {
     /// module name
     pub name: String,
     /// module pub account address
     pub account: AccountAddress,
     /// module's code
     pub modules: Vec<VerifiedModule>,
+}
+
+impl ModuleRegistryEntry {
+    pub fn get_resource(&self, data: &BTreeMap<Vec<u8>, Vec<u8>>) -> Vec<Resource> {
+        let mut resources = vec![];
+        let resource = match self.name.as_str() {
+            "etoken" => {
+                Resource::EToken(ETokenResource::make_from(self.account.clone(), data).ok())
+            },
+            "channel" => Resource::Channel(ChannelResource::make_from(self.account.clone(), data).map_err(|e|{
+                //println!("get channel resource error:{:?}",e)
+            }).ok()),
+            _ => {
+                panic!("unsupported resource:{}", self.name.clone())
+            }
+        };
+        resources.push(resource);
+        return resources;
+    }
 }
 
 /// Proxy handling CLI commands/inputs.
@@ -177,8 +200,8 @@ impl ClientProxy {
     }
 
     /// registry a new module
-    pub fn registry_module(&mut self, name: String, account: AccountAddress, modules: Vec<VerifiedModule>){
-        self.module_registry.insert(name.clone(), ModuleRegistryEntry{name,account, modules});
+    pub fn registry_module(&mut self, name: String, account: AccountAddress, modules: Vec<VerifiedModule>) {
+        self.module_registry.insert(name.clone(), ModuleRegistryEntry { name, account, modules});
     }
 
     /// check module is exist
@@ -187,8 +210,8 @@ impl ClientProxy {
     }
 
     /// get all module.
-    pub fn get_module_registry(&self) -> Vec<ModuleRegistryEntry>{
-        return self.module_registry.iter().map(|(_k,v)|v.clone()).collect::<Vec<_>>()
+    pub fn get_module_registry(&self) -> Vec<ModuleRegistryEntry> {
+        return self.module_registry.iter().map(|(_k, v)| v.clone()).collect::<Vec<_>>();
     }
 
     fn get_account_ref_id(&self, sender_account_address: &AccountAddress) -> Result<usize> {
@@ -400,7 +423,7 @@ impl ClientProxy {
     pub fn send_transaction(
         &mut self,
         sender_address: &AccountAddress,
-        program:Program,
+        program: Program,
         gas_unit_price: Option<u64>,
         max_gas_amount: Option<u64>,
         is_blocking: bool,
@@ -418,7 +441,6 @@ impl ClientProxy {
                 )
             })?;
         {
-
             let sender = self.accounts.get(sender_account_ref_id).ok_or_else(|| {
                 format_err!("Unable to find sender account: {}", sender_account_ref_id)
             })?;
@@ -814,7 +836,7 @@ impl ClientProxy {
     }
 
     /// Get account data by address
-    pub fn get_account_data(&self, address:AccountAddress) -> Result<AccountData> {
+    pub fn get_account_data(&self, address: AccountAddress) -> Result<AccountData> {
         Self::get_account_data_from_address(&self.client, address, false, None)
     }
 
@@ -844,13 +866,11 @@ impl ClientProxy {
             },
             false => (0, AccountStatus::Local),
         };
-        Ok(AccountData {
+        Ok(AccountData::new(
             address,
             key_pair,
             sequence_number,
-            status,
-            channels: vec![],
-        })
+            status))
     }
 
     fn get_libra_wallet(mnemonic_file: Option<String>) -> Result<WalletLibrary> {
@@ -946,7 +966,7 @@ impl ClientProxy {
             "http://{}?amount={}&address={:?}",
             self.faucet_server, num_coins, receiver
         )
-        .parse::<hyper::Uri>()?;
+            .parse::<hyper::Uri>()?;
 
         let response = runtime.block_on(client.get(url))?;
         let status_code = response.status();
@@ -1012,7 +1032,7 @@ impl ClientProxy {
             gas_unit_price.unwrap_or(GAS_UNIT_PRICE),
             TX_EXPIRATION,
         )
-        .unwrap();
+            .unwrap();
         let mut req = SubmitTransactionRequest::new();
         req.set_signed_txn(signed_txn.into_proto());
         Ok(req)
@@ -1073,11 +1093,13 @@ impl fmt::Display for AccountEntry {
 
 #[cfg(test)]
 mod tests {
-    use crate::client_proxy::{parse_bool, AddressAndIndex, ClientProxy};
+    use tempfile::NamedTempFile;
+
     use config::trusted_peers::TrustedPeersConfigHelpers;
     use libra_wallet::io_utils;
     use proptest::prelude::*;
-    use tempfile::NamedTempFile;
+
+    use crate::client_proxy::{AddressAndIndex, ClientProxy, parse_bool};
 
     fn generate_accounts_from_wallet(count: usize) -> (ClientProxy, Vec<AddressAndIndex>) {
         let mut accounts = Vec::new();
@@ -1102,7 +1124,7 @@ mod tests {
             None,
             Some(mnemonic_path),
         )
-        .unwrap();
+            .unwrap();
         for _ in 0..count {
             accounts.push(client_proxy.create_next_account(false).unwrap());
         }

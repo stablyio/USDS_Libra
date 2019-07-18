@@ -22,7 +22,7 @@ use types::write_set::{WriteOp, WriteSetMut};
 use vm::access::ScriptAccess;
 use vm::file_format::{CompiledProgram, FunctionSignature, SignatureToken};
 
-use crate::{client_proxy::*, commands::*, etoken_resource::ETokenResource};
+use crate::{client_proxy::*, commands::*, resource::ETokenResource, account_state::AccountState};
 use itertools::Itertools;
 
 lazy_static! {
@@ -463,34 +463,24 @@ impl HackCommandGetLatestAccountState {
         match client.get_latest_account_state(&params) {
             Ok((acc, version)) => match acc {
                 Some(blob) => {
-                    let account_btree = blob.borrow().try_into()?;
-                    let account_resource = AccountResource::make_from(&account_btree).unwrap_or(AccountResource::default());
-                    let etoken_module = client.module_registry.get("etoken");
-                    let etoken_resource = match etoken_module {
-                        Some(entry) => match ETokenResource::make_from(entry.account.clone(), &account_btree) {
-                            Ok(res) => Some(res),
-                            Err(_) => None,
-                        },
-                        None => None,
-                    };
+                    let account_state = AccountState::from_blob(&blob, &client.get_module_registry())?;
 
 
                     println!(
                         "Latest account state is: \n \
                      Account: {:#?}\n \
-                     AccountResource: {:#?}\n \
-                     ETokenResource: {:#?}\n \
+                     AccountState: {:#?}\n \
                      Blockchain Version: {}\n",
                         client
                             .get_account_address_from_parameter(params[1])
                             .expect("Unable to parse account parameter"),
-                        account_resource,
-                        etoken_resource,
+                        account_state,
                         version,
                     );
-                    let tree = BTreeMap::try_from(&blob).unwrap();
+
+                    let account_btree:BTreeMap<Vec<u8>,Vec<u8>> = blob.borrow().try_into()?;
                     println!("AccountStateBlob Tree:");
-                    tree.iter().map(|(k, v)| -> (String, String) {
+                    account_btree.iter().map(|(k, v)| -> (String, String) {
                         let mut key: String = "".to_owned();
                         if k[0] == CODE_TAG {
                             key.push_str("code_")
@@ -544,7 +534,7 @@ impl HackCommandWriteSet {
         let signer_account_address =
             client.get_account_address_from_parameter(params[1])?;
         let etoken_module = client.module_registry.get("etoken").unwrap();
-        let path = ETokenResource::etoken_resource_path(etoken_module.account.clone());
+        let path = ETokenResource::resource_path(etoken_module.account.clone());
         let ap = AccessPath::new(signer_account_address.clone(), path);
         let resource = ETokenResource::new(9999);
         let resource_bytes = SimpleSerializer::serialize(&resource).unwrap();

@@ -22,7 +22,7 @@ use types::write_set::{WriteOp, WriteSetMut};
 use vm::access::ScriptAccess;
 use vm::file_format::{CompiledProgram, FunctionSignature, SignatureToken};
 
-use crate::{client_proxy::*, commands::*, etoken_resource::ETokenResource, hack_commands::*};
+use crate::{client_proxy::*, commands::*, resource::*, hack_commands::*};
 
 lazy_static! {
 
@@ -268,7 +268,7 @@ impl Command for ChannelCommandOffchainTransfer {
                 return;
             }
         };
-        let address = match client.get_account_address_from_parameter(params[2]) {
+        let other_address = match client.get_account_address_from_parameter(params[2]) {
             Ok(address) => address,
             Err(e) => {
                 report_error("get address fail.", e);
@@ -282,6 +282,22 @@ impl Command for ChannelCommandOffchainTransfer {
                 return;
             }
         };
+
+        let account_data = match client.get_account_data(address) {
+            Ok(account_data) => account_data,
+            Err(e) => {
+                report_error("get account data fail.", e);
+                return;
+            }
+        };
+        let offchain_data = match account_data.get_channel(&other_address) {
+            Some(offchain_data) => offchain_data,
+            None => {
+                println!("get channel offchain data fail.");
+                return;
+            }
+        };
+
         //TODO
         return;
     }

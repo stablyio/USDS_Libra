@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #![feature(duration_float)]
-#![deny(missing_docs)]
+//#![deny(missing_docs)]
 //! Libra Client
 //!
 //! Client (binary) is the CLI tool to interact with Libra validator.
@@ -21,9 +21,43 @@ pub(crate) mod grpc_client;
 pub(crate) mod query_commands;
 pub(crate) mod submit_transaction_command;
 pub(crate) mod transfer_commands;
+pub(crate) mod resource;
+pub(crate) mod account_state;
 pub(crate) mod hack_commands;
-pub(crate) mod etoken_resource;
 pub(crate) mod channel_commands;
+
+extern crate strum;
+#[macro_use] extern crate strum_macros;
+
+/// Offchain transfer request
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+pub struct TransferRequest{
+    /// sender
+    pub sender: AccountAddress,
+    /// version
+    pub version: u64,
+    /// self balance
+    pub self_balance: u64,
+    /// other balance
+    pub other_balance: u64,
+    /// sender signature
+    pub signature: Vec<u8>,
+}
+
+/// Offchain transfer conform
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+pub struct TransferConform{
+    /// sender
+    pub sender: AccountAddress,
+    /// version
+    pub version: u64,
+    /// self balance
+    pub self_balance: u64,
+    /// other balance
+    pub other_balance: u64,
+    /// sender signature
+    pub signature: Vec<u8>,
+}
 
 /// Offchain data
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
@@ -56,6 +90,10 @@ pub struct AccountData {
     pub status: AccountStatus,
     /// Offchain channels.
     pub channels: Vec<OffchainData>,
+    /// Offchain transfer request
+    pub transfer_requests: Vec<TransferRequest>,
+    /// Offchain transfer conform
+    pub transfer_conforms: Vec<TransferConform>,
 }
 
 /// Enum used to represent account status.
@@ -71,6 +109,22 @@ pub enum AccountStatus {
 }
 
 impl AccountData {
+
+    pub fn new(address: AccountAddress,
+               key_pair: Option<KeyPair>,
+               sequence_number: u64,
+               status:AccountStatus) -> Self {
+        AccountData{
+            address,
+            key_pair,
+            sequence_number,
+            status,
+            channels:vec![],
+            transfer_requests:vec![],
+            transfer_conforms:vec![],
+        }
+    }
+
     /// Serialize account keypair if exists.
     pub fn keypair_as_string(&self) -> Option<(String, String)> {
         match &self.key_pair {
