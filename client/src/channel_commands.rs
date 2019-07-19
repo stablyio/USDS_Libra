@@ -22,7 +22,7 @@ use types::write_set::{WriteOp, WriteSetMut};
 use vm::access::ScriptAccess;
 use vm::file_format::{CompiledProgram, FunctionSignature, SignatureToken};
 
-use crate::{client_proxy::*, commands::*, resource::*, hack_commands::*};
+use crate::{client_proxy::*, commands::*, resource::*, hack_commands::*, TransferRequest, TransferConform};
 
 lazy_static! {
 
@@ -49,8 +49,11 @@ impl Command for ChannelCommand {
             Box::new(ChannelCommandDeploy {}),
             Box::new(ChannelCommandOpen {}),
             Box::new(ChannelCommandClose {}),
+            Box::new(ChannelCommandShow {}),
             Box::new(ChannelCommandSettle{}),
             Box::new(ChannelCommandOffchainTransfer {}),
+            Box::new(ChannelCommandOffchainConform {}),
+            Box::new(ChannelCommandOffchainProcessConform {}),
         ];
 
         subcommand_execute(&params[0], commands, client, &params[1..]);
@@ -134,7 +137,8 @@ impl Command for ChannelCommandOpen {
                 return;
             }
         };
-        execute_script(client, &address, &CHANNEL_OPEN_TEMPLATE, vec![TransactionArgument::Address(other_address), TransactionArgument::U64(amount)]).map(handler_result).map_err(handler_err).ok();
+        execute_script(client, &address, &CHANNEL_OPEN_TEMPLATE, vec![TransactionArgument::Address(other_address.clone()), TransactionArgument::U64(amount)]).map(handler_result).map_err(handler_err).ok();
+        client.sync_channel_status(address, other_address);
     }
 }
 
@@ -176,9 +180,9 @@ impl Command for ChannelCommandClose {
             }
         };
         let account_data = match client.get_account_data(address) {
-            Ok(account_data) => account_data,
-            Err(e) => {
-                report_error("get account data fail.", e);
+            Some(account_data) => account_data,
+            None => {
+                println!("get account data fail.");
                 return;
             }
         };
@@ -198,11 +202,59 @@ impl Command for ChannelCommandClose {
                 execute_script(client, &address, &CHANNEL_CLOSE_WITH_PROOF_TEMPLATE, args).map(handler_result).map_err(handler_err).ok();
             }
             None => {
-                execute_script(client, &address, &CHANNEL_CLOSE_TEMPLATE, vec![TransactionArgument::Address(other_address)]).map(handler_result).map_err(handler_err).ok();
+                execute_script(client, &address, &CHANNEL_CLOSE_TEMPLATE, vec![TransactionArgument::Address(other_address.clone())]).map(handler_result).map_err(handler_err).ok();
             }
         };
+        client.sync_channel_status(address, other_address);
     }
 }
+
+
+
+/// Close channel
+pub struct ChannelCommandShow {}
+
+impl Command for ChannelCommandShow {
+    fn get_aliases(&self) -> Vec<&'static str> {
+        vec!["show", "so"]
+    }
+    fn get_params_help(&self) -> &'static str {
+        "<account_ref_id>|<account_address>"
+    }
+    fn get_description(&self) -> &'static str {
+        "Show channels."
+    }
+    fn execute(&self, client: &mut ClientProxy, params: &[&str]) {
+        if params.len() != 2 {
+            println!("Invalid number of arguments for command");
+            return;
+        }
+        if !client.exist_module("channel") {
+            println!("Please deploy channel first.");
+            return;
+        }
+        let address = match client.get_account_address_from_parameter(params[1]) {
+            Ok(address) => address,
+            Err(e) => {
+                report_error("get address fail.", e);
+                return;
+            }
+        };
+
+        let account_data = match client.get_account_data(address) {
+            Some(account_data) => account_data,
+            None => {
+                println!("get account data fail.");
+                return;
+            }
+        };
+
+        for channel in &account_data.channels{
+            println!("channel:{:#?}", channel);
+        }
+    }
+}
+
 
 
 /// Settle channel
@@ -241,7 +293,8 @@ impl Command for ChannelCommandSettle {
                 return;
             }
         };
-        execute_script(client, &address, &CHANNEL_SETTLE_TEMPLATE, vec![TransactionArgument::Address(other_address)]).map(handler_result).map_err(handler_err).ok();
+        execute_script(client, &address, &CHANNEL_SETTLE_TEMPLATE, vec![TransactionArgument::Address(other_address.clone())]).map(handler_result).map_err(handler_err).ok();
+        client.sync_channel_status(address, other_address);
     }
 }
 
@@ -290,22 +343,228 @@ impl Command for ChannelCommandOffchainTransfer {
             }
         };
 
-        let account_data = match client.get_account_data(address) {
-            Ok(account_data) => account_data,
+        match client.sync_channel_status(address, other_address){
             Err(e) => {
-                report_error("get account data fail.", e);
+                report_error("sync_channel_status error", e.into());
+                return;
+            }
+            Ok(_) =>{
+                //ignore
+            }
+        };
+
+        let account_data = match client.get_account_data(address) {
+            Some(account_data) => account_data,
+            None => {
+                print!("get account data fail.");
                 return;
             }
         };
-        let offchain_data = match account_data.get_channel(&other_address) {
-            Some(offchain_data) => offchain_data,
+        let channel = match account_data.get_channel(&other_address) {
+            Some(channel) => channel,
+            None => {
+                println!("get channel data fail.");
+                return;
+            }
+        };
+        let request = match channel.transfer(amount){
+            Ok(request) => request,
+            Err(e) => {
+                report_error("transfer fail: {:?}", e.into());
+                return;
+            }
+        };
+
+        match bincode::serialize(&request){
+            Ok(bytes) => {
+                let hex = hex::encode(bytes);
+                println!("please send transfer request to other:");
+                println!("{}",hex);
+            }
+            Err(e) => {
+                report_error("transfer fail: {:?}", e.into());
+                return;
+            }
+        }
+        return;
+    }
+}
+
+/// Offchain transfer conform
+pub struct ChannelCommandOffchainConform {}
+
+impl Command for ChannelCommandOffchainConform {
+    fn get_aliases(&self) -> Vec<&'static str> {
+        vec!["conform", "cf"]
+    }
+    fn get_params_help(&self) -> &'static str {
+        "<account_ref_id>|<account_address> <request_hex>"
+    }
+    fn get_description(&self) -> &'static str {
+        "Conform offchain transfer request from other."
+    }
+    fn execute(&self, client: &mut ClientProxy, params: &[&str]) {
+        if params.len() != 3 {
+            println!("Invalid number of arguments for command");
+            return;
+        }
+        if !client.exist_module("channel") {
+            println!("Please deploy channel first.");
+            return;
+        }
+        let address = match client.get_account_address_from_parameter(params[1]) {
+            Ok(address) => address,
+            Err(e) => {
+                report_error("get address fail.", e);
+                return;
+            }
+        };
+        let hex = params[2];
+        let bytes = match hex::decode(hex){
+            Ok(bytes) => bytes,
+            Err(e) => {
+                report_error("parse hex error.", e.into());
+                return;
+            }
+        };
+
+        let request = match bincode::deserialize::<TransferRequest>(bytes.as_slice()){
+            Ok(request) => request,
+            Err(e) => {
+                report_error("parse request error.", e.into());
+                return;
+            }
+        };
+        let other_address = request.sender.clone();
+        match client.sync_channel_status(address, other_address){
+            Err(e) => {
+                report_error("sync_channel_status error", e.into());
+                return;
+            }
+            Ok(_) =>{
+                //ignore
+            }
+        };
+
+        let account_data = match client.get_account_data(address) {
+            Some(account_data) => account_data,
+            None => {
+                print!("get account data fail.");
+                return;
+            }
+        };
+        let mut channel = match account_data.get_channel(&other_address) {
+            Some(channel) => channel,
             None => {
                 println!("get channel offchain data fail.");
                 return;
             }
         };
+        let conform = match channel.conform(request) {
+            Ok(conform) => conform,
+            Err(e) => {
+                report_error("conform error", e.into());
+                return;
+            }
+        };
 
-        //TODO
+        match bincode::serialize(&conform){
+            Ok(bytes) => {
+                let hex = hex::encode(bytes);
+                println!("please send transfer conform to other:");
+                println!("{}",hex);
+            }
+            Err(e) => {
+                report_error("transfer conform fail: {:?}", e.into());
+                return;
+            }
+        }
+        return;
+    }
+}
+
+
+/// Offchain transfer conform
+pub struct ChannelCommandOffchainProcessConform {}
+
+impl Command for ChannelCommandOffchainProcessConform {
+    fn get_aliases(&self) -> Vec<&'static str> {
+        vec!["process_conform", "pcf"]
+    }
+    fn get_params_help(&self) -> &'static str {
+        "<account_ref_id>|<account_address> <conform_hex>"
+    }
+    fn get_description(&self) -> &'static str {
+        "Process transfer conform."
+    }
+    fn execute(&self, client: &mut ClientProxy, params: &[&str]) {
+        if params.len() != 3 {
+            println!("Invalid number of arguments for command");
+            return;
+        }
+        if !client.exist_module("channel") {
+            println!("Please deploy channel first.");
+            return;
+        }
+        let address = match client.get_account_address_from_parameter(params[1]) {
+            Ok(address) => address,
+            Err(e) => {
+                report_error("get address fail.", e);
+                return;
+            }
+        };
+        let hex = params[2];
+        let bytes = match hex::decode(hex){
+            Ok(bytes) => bytes,
+            Err(e) => {
+                report_error("parse hex error.", e.into());
+                return;
+            }
+        };
+
+        let conform = match bincode::deserialize::<TransferConform>(bytes.as_slice()){
+            Ok(conform) => conform,
+            Err(e) => {
+                report_error("parse conform error.", e.into());
+                return;
+            }
+        };
+
+        let other_address = conform.sender;
+
+        match client.sync_channel_status(address, other_address){
+            Err(e) => {
+                report_error("sync_channel_status error", e.into());
+                return;
+            }
+            Ok(_) =>{
+                //ignore
+            }
+        };
+
+        let account_data = match client.get_account_data(address) {
+            Some(account_data) => account_data,
+            None => {
+                print!("get account data fail.");
+                return;
+            }
+        };
+        let mut channel = match account_data.get_channel(&other_address) {
+            Some(channel) => channel,
+            None => {
+                println!("get channel offchain data fail.");
+                return;
+            }
+        };
+        match channel.process_transfer_conform(conform){
+            Ok(()) => {
+                println!("channel: {:#?}", channel);
+            },
+            Err(e) => {
+                report_error("process conform error", e.into());
+                return;
+            }
+        }
         return;
     }
 }

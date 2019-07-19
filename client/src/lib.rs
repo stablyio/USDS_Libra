@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #![feature(duration_float)]
-
 //#![deny(missing_docs)]
 //! Libra Client
 //!
@@ -13,13 +12,8 @@ use failure::prelude::*;
 use types::account_address::AccountAddress;
 use serde::{Deserialize, Serialize};
 
-extern crate strum;
-#[macro_use]
-extern crate strum_macros;
-
-
-use crate::resource::{ChannelResource, ClosedChannelResource, ProofResource};
-
+use crate::resource::*;
+use std::collections::HashMap;
 
 pub(crate) mod account_commands;
 /// Main instance of client holding corresponding information, e.g. account address.
@@ -39,6 +33,8 @@ pub(crate) mod channel_commands;
 /// Offchain transfer request
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct TransferRequest {
+    /// sender.
+    pub sender: AccountAddress,
     /// version
     pub version: u64,
     /// amount
@@ -60,6 +56,7 @@ impl TransferRequest {
 /// Offchain transfer conform
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct TransferConform {
+    pub sender: AccountAddress,
     /// sender signature
     pub signature: Vec<u8>,
     pub request: TransferRequest,
@@ -91,7 +88,7 @@ impl ChannelLocalData {
 pub enum ChannelStatus {
     None(),
     Open(ChannelResource),
-    Closed(ClosedChannelResource, Option<ProofResource>),
+    Closed(ChannelResource, Option<ProofResource>),
 }
 
 impl ChannelStatus {
@@ -106,14 +103,50 @@ impl ChannelStatus {
 /// Offchain channel
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct OffchainChannel {
+    pub self_address: AccountAddress,
     /// channel other party account
-    pub other: AccountAddress,
+    pub other_address: AccountAddress,
     pub self_status: ChannelStatus,
     pub other_status: ChannelStatus,
     pub data: Option<ChannelLocalData>,
 }
 
 impl OffchainChannel {
+    pub fn new(self_address: AccountAddress, other_address: AccountAddress, self_channel: ChannelResource, other_channel: Option<ChannelResource>, self_proof: Option<ProofResource>, other_proof: Option<ProofResource>) -> Self {
+        let data = match &self_proof {
+            Some(proof) => {
+                Some(ChannelLocalData {
+                    version: proof.version,
+                    self_balance: proof.self_balance,
+                    self_signature: proof.self_signature.as_bytes().to_vec(),
+                    other_balance: proof.other_balance,
+                    other_signature: proof.other_signature.as_bytes().to_vec(),
+                })
+            }
+            None => None,
+        };
+
+        OffchainChannel {
+            self_address,
+            other_address,
+            self_status:
+            if self_channel.closed {
+                ChannelStatus::Closed(self_channel, self_proof)
+            } else {
+                ChannelStatus::Open(self_channel)
+            },
+            other_status: match other_channel {
+                Some(other_channel) => if other_channel.closed {
+                    ChannelStatus::Closed(other_channel, other_proof)
+                } else {
+                    ChannelStatus::Open(other_channel)
+                },
+                None => ChannelStatus::None()
+            },
+            data,
+        }
+    }
+
     pub fn is_ready(&self) -> bool {
         return self.self_status.is_open() && self.other_status.is_open();
     }
@@ -123,6 +156,7 @@ impl OffchainChannel {
         if let Some(data) = &self.data {
             ensure!(data.self_balance >= amount, "balance not enough.");
             return Ok(TransferRequest {
+                sender: self.self_address,
                 amount,
                 version: data.version + 1,
                 self_balance: data.self_balance - amount,
@@ -134,6 +168,7 @@ impl OffchainChannel {
             if let ChannelStatus::Open(other_resource) = &self.other_status {
                 ensure!(resource.coin >= amount, "balance not enough.");
                 return Ok(TransferRequest {
+                    sender: self.self_address,
                     amount,
                     version: 1,
                     self_balance: resource.coin - amount,
@@ -167,10 +202,10 @@ impl OffchainChannel {
                     ensure!(other_resource.coin >= request.amount, "balance not enough.");
                     ensure!(resource.coin + other_resource.coin == request.total_balance(), "balance check fail.");
                     ensure!(request.other_balance == resource.coin + request.amount, "balance check fail.");
-                }else{
+                } else {
                     bail!("unexpect channel status.")
                 }
-            }else{
+            } else {
                 bail!("unexpect channel status.")
             }
 
@@ -181,14 +216,54 @@ impl OffchainChannel {
                 other_signature: request.signature.clone(),
                 self_signature: signature.clone(),
             };
+            self.data = Some(data);
         }
         Ok(
             TransferConform {
+                sender: self.self_address.clone(),
                 //TODO
                 signature,
                 request,
             }
         )
+    }
+
+    pub fn process_transfer_conform(&mut self, conform: TransferConform) -> Result<()> {
+        //TODO check request
+        ensure!(self.is_ready(), "channel is not ready");
+        if let Some(data) = self.data.as_mut() {
+            data.version = conform.request.version;
+            data.self_balance = conform.request.self_balance;
+            data.other_balance = conform.request.other_balance;
+            data.self_signature = conform.request.signature.clone();
+            data.other_signature = conform.signature.clone();
+        } else {
+            let data = ChannelLocalData {
+                version: conform.request.version,
+                self_balance: conform.request.self_balance,
+                other_balance: conform.request.other_balance,
+                other_signature: conform.signature.clone(),
+                self_signature: conform.request.signature.clone(),
+            };
+            self.data = Some(data);
+        }
+        Ok(())
+    }
+
+    pub fn update_with_resource(&mut self, channel_resource: ChannelResource, proof_resource: Option<ProofResource>) {
+        if channel_resource.other == self.other_address {
+            if channel_resource.closed {
+                self.self_status = ChannelStatus::Closed(channel_resource, proof_resource)
+            } else {
+                self.self_status = ChannelStatus::Open(channel_resource)
+            }
+        } else if channel_resource.other == self.self_address {
+            if channel_resource.closed {
+                self.other_status = ChannelStatus::Closed(channel_resource, proof_resource)
+            } else {
+                self.other_status = ChannelStatus::Open(channel_resource)
+            }
+        }
     }
 }
 
@@ -205,7 +280,7 @@ pub struct AccountData {
     /// Whether the account is initialized on chain, cached local only, or status unknown.
     pub status: AccountStatus,
     /// Offchain channels.
-    pub channels: Vec<OffchainChannel>,
+    pub channels: HashMap<AccountAddress, OffchainChannel>,
     /// Offchain transfer request
     pub transfer_requests: Vec<TransferRequest>,
     /// Offchain transfer conform
@@ -234,7 +309,7 @@ impl AccountData {
             key_pair,
             sequence_number,
             status,
-            channels: vec![],
+            channels: HashMap::new(),
             transfer_requests: vec![],
             transfer_conforms: vec![],
         }
@@ -253,12 +328,16 @@ impl AccountData {
 
     /// append channel
     pub fn append_channel(&mut self, channel: OffchainChannel) {
-        self.channels.push(channel);
+        self.channels.insert(channel.other_address.clone(), channel);
+    }
+
+    pub fn delete_channel(&mut self, other: &AccountAddress) {
+        self.channels.remove(other);
     }
 
     /// get channel
-    pub fn get_channel(&self, other: &AccountAddress) -> Option<OffchainChannel> {
-        return self.channels.iter().find(|item| item.other == *other).cloned();
+    pub fn get_channel(&mut self, other: &AccountAddress) -> Option<&mut OffchainChannel> {
+        return self.channels.get_mut(other);
     }
 
     /// append_transfer_request

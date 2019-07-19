@@ -45,7 +45,7 @@ use types::{
     validator_verifier::ValidatorVerifier,
 };
 
-use crate::{AccountData, AccountStatus, commands::*, grpc_client::GRPCClient, resource::*};
+use crate::{account_state::AccountState, AccountData, AccountStatus, commands::*, grpc_client::GRPCClient, OffchainChannel, resource::{ETokenResource, ChannelResource, ProofResource, Resource}};
 
 const CLIENT_WALLET_MNEMONIC_FILE: &str = "client.mnemonic";
 const GAS_UNIT_PRICE: u64 = 0;
@@ -102,20 +102,15 @@ impl ModuleRegistryEntry {
         match self.name.as_str() {
             "etoken" => {
                 resources.push(Resource::EToken(ETokenResource::make_from(self.account.clone(), data).ok()));
-            },
+            }
             "channel" => {
-                resources.push(Resource::Channel(ChannelResource::make_from(self.account.clone(), data).map_err(|e|{
+                resources.push(Resource::Channel(ChannelResource::make_from(self.account.clone(), data).map_err(|e| {
                     //println!("get channel resource error:{:?}",e)
                 }).ok()));
-
-                resources.push(Resource::ClosedChannel(ClosedChannelResource::make_from(self.account.clone(), data).map_err(|e|{
+                resources.push(Resource::Proof(ProofResource::make_from(self.account.clone(), data).map_err(|e| {
                     //println!("get channel resource error:{:?}",e)
                 }).ok()));
-
-                resources.push(Resource::Proof(ProofResource::make_from(self.account.clone(), data).map_err(|e|{
-                    //println!("get channel resource error:{:?}",e)
-                }).ok()));
-            },
+            }
             _ => {
                 panic!("unsupported resource:{}", self.name.clone())
             }
@@ -210,7 +205,7 @@ impl ClientProxy {
 
     /// registry a new module
     pub fn registry_module(&mut self, name: String, account: AccountAddress, modules: Vec<VerifiedModule>) {
-        self.module_registry.insert(name.clone(), ModuleRegistryEntry { name, account, modules});
+        self.module_registry.insert(name.clone(), ModuleRegistryEntry { name, account, modules });
     }
 
     /// check module is exist
@@ -221,6 +216,79 @@ impl ClientProxy {
     /// get all module.
     pub fn get_module_registry(&self) -> Vec<ModuleRegistryEntry> {
         return self.module_registry.iter().map(|(_k, v)| v.clone()).collect::<Vec<_>>();
+    }
+
+    pub fn sync_channel_status(&mut self, self_address: AccountAddress, other_address: AccountAddress) -> Result<()> {
+        let self_blob = self.client.get_account_blob(self_address.clone())?.0.ok_or(format_err!("Unable to get account state by address {}", self_address))?;
+        let other_blob = self.client.get_account_blob(other_address.clone())?.0.ok_or(format_err!("Unable to get account state by address {}", other_address))?;
+
+        let module_registry = self.get_module_registry();
+        let self_state = AccountState::from_blob(&self_blob, &module_registry)?;
+        let other_state = AccountState::from_blob(&other_blob, &module_registry)?;
+
+        let mut self_account_data = self.get_account_data(self_address.clone()).ok_or(format_err!("Unable to get account data {}", self_address))?;
+
+        let self_channel_resource = match self_state.find_resource(|r| -> bool {
+            match r {
+                Resource::Channel(_) => true,
+                _ => false
+            }
+        }).unwrap() {
+            Resource::Channel(resource) => resource,
+            _ => None,
+        };
+        if self_channel_resource.is_none() {
+            self_account_data.delete_channel(&other_address);
+            return Ok(())
+        }
+
+        let self_channel_resource = self_channel_resource.unwrap();
+        //.ok_or(format_err!("Unable to get account channel resource by address {}", self_address))?;
+
+        let other_channel_resource = match other_state.find_resource(|r| -> bool {
+            match r {
+                Resource::Channel(_) => true,
+                _ => false
+            }
+        }).unwrap() {
+            Resource::Channel(resource) => resource,
+            _ => None,
+        };
+
+        let self_proof_resource = match self_state.find_resource(|r| -> bool {
+            match r {
+                Resource::Proof(_) => true,
+                _ => false
+            }
+        }).unwrap() {
+            Resource::Proof(resource) => resource,
+            _ => None,
+        };
+
+        let other_proof_resource = match other_state.find_resource(|r| -> bool {
+            match r {
+                Resource::Proof(_) => true,
+                _ => false
+            }
+        }).unwrap() {
+            Resource::Proof(resource) => resource,
+            _ => None,
+        };
+
+
+        match self_account_data.get_channel(&other_address) {
+            Some(channel) => {
+                channel.update_with_resource(self_channel_resource, self_proof_resource);
+                if let Some(channel_resource) = other_channel_resource {
+                    channel.update_with_resource(channel_resource, other_proof_resource);
+                }
+            }
+            None => {
+                let channel = OffchainChannel::new(self_address, other_address, self_channel_resource, other_channel_resource, self_proof_resource, other_proof_resource);
+                self_account_data.append_channel(channel);
+            }
+        }
+        Ok(())
     }
 
     fn get_account_ref_id(&self, sender_account_address: &AccountAddress) -> Result<usize> {
@@ -845,8 +913,8 @@ impl ClientProxy {
     }
 
     /// Get account data by address
-    pub fn get_account_data(&self, address: AccountAddress) -> Result<AccountData> {
-        Self::get_account_data_from_address(&self.client, address, false, None)
+    pub fn get_account_data(&mut self, address: AccountAddress) -> Option<&mut AccountData> {
+        self.accounts.iter_mut().find(|a| a.address == address)
     }
 
     /// Get account using specific address.

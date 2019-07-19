@@ -7,11 +7,12 @@ use types::account_state_blob::AccountStateBlob;
 
 use crate::client_proxy::ModuleRegistryEntry;
 use crate::resource::{ChannelResource, ETokenResource, Resource};
+use itertools::Itertools;
 
 #[derive(Debug)]
 pub struct AccountState {
-    account_resource: AccountResource,
-    resources: HashMap<String, Vec<Resource>>,
+    pub account_resource: AccountResource,
+    pub resources: HashMap<String, Vec<Resource>>,
 }
 
 impl AccountState {
@@ -26,6 +27,10 @@ impl AccountState {
             account_resource,
             resources,
         })
+    }
+
+    pub fn find_resource(&self,filter:impl FnMut(&&Resource)->bool) -> Option<Resource>{
+        self.resources.iter().map(|(_k,v)|v.as_slice()).collect_vec().as_slice().concat().iter().find(filter).cloned()
     }
 }
 

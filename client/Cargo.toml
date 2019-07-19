@@ -42,8 +42,6 @@ bytecode_verifier = { path = "../language/bytecode_verifier"}
 vm = { path = "../language/vm"}
 canonical_serialization = {path = "../common/canonical_serialization"}
 
-strum = "0.15.0"
-strum_macros = "0.15.0"
 
 [dev-dependencies]
 tempfile = "3.0.6"
