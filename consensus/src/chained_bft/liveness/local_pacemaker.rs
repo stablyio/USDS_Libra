@@ -86,7 +86,7 @@ impl PacemakerTimeInterval for ExponentialTimeInterval {
         let pow = round_index_after_committed_qc.min(self.max_exponent) as u32;
         let base_multiplier = self.exponent_base.powf(f64::from(pow));
         let duration_ms = ((self.base_ms as f64) * base_multiplier).ceil() as u64;
-        Duration::from_millis(duration_ms*3)
+        Duration::from_millis(duration_ms*2)
     }
 }
 
@@ -194,7 +194,7 @@ impl LocalPacemakerInner {
         let mut sender = self.new_round_events_sender.clone();
         let time_service= self.time_service.clone();
         async move{
-            time_service.sleep(Duration::from_millis(3000)).await;
+            time_service.sleep(Duration::from_millis(1000)).await;
             if let Err(e) = sender
                 .send(NewRoundEvent {
                     round,
