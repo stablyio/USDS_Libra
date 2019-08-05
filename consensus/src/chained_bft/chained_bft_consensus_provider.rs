@@ -141,7 +141,7 @@ impl ChainedBftProvider {
     /// Choose a proposer that is going to be the single leader (relevant for a mock fixed proposer
     /// election only).
     fn choose_leader(initial_setup: &InitialSetup) -> Author {
-        // As it is just a tmp hack function, pick the smallest PeerId to be a proposer.
+        // As it is just a tmp usds function, pick the smallest PeerId to be a proposer.
         *initial_setup
             .peers
             .iter()

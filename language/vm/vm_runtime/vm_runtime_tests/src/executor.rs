@@ -138,7 +138,7 @@ impl FakeExecutor {
         vm.validate_transaction(txn, &self.data_store)
     }
 
-    /// TODO: This is a hack and likely to break soon. THe Account type is replicated here with no
+    /// TODO: This is a usds and likely to break soon. THe Account type is replicated here with no
     /// checks that is the right now. Fix it!
     fn get_account_struct_def() -> StructDef {
         // STRUCT DEF StructDef(StructDefInner { field_definitions: [ByteArray,

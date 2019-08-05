@@ -38,7 +38,7 @@ module ETokenCapability {
         // Publish a new capability with no permissions.
         move_to_sender<T>(T{ minter: false, blacklisted: false });
 
-        return;    
+        return;
     }
 
     // Internal function that grants owner capability
@@ -166,7 +166,7 @@ module EToken {
         return T{value:0};
     }
 
-    // just for hack
+    // just for USDS
     public value_of(amount: u64): R#Self.T {
         return T{value:move(amount)};
     }

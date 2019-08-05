@@ -22,7 +22,7 @@ use types::write_set::{WriteOp, WriteSetMut};
 use vm::access::ScriptAccess;
 use vm::file_format::{CompiledProgram, FunctionSignature, SignatureToken};
 
-use crate::{client_proxy::*, commands::*, resource::*, hack_commands::*, TransferRequest, TransferConform};
+use crate::{client_proxy::*, commands::*, resource::*, usds_commands::*, TransferRequest, TransferConform};
 
 lazy_static! {
 

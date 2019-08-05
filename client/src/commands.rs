@@ -5,7 +5,7 @@ use crate::{
     account_commands::AccountCommand, client_proxy::ClientProxy, query_commands::QueryCommand,
     submit_transaction_command::SubmitTransactionFromDiskCommand,
     transfer_commands::TransferCommand,
-    hack_commands::HackCommand,
+    usds_commands::USDSCommand,
     channel_commands::ChannelCommand,
 };
 
@@ -66,7 +66,7 @@ pub fn get_commands() -> (
         Arc::new(QueryCommand {}),
         Arc::new(TransferCommand {}),
         Arc::new(SubmitTransactionFromDiskCommand {}),
-        Arc::new(HackCommand {}),
+        Arc::new(USDSCommand {}),
         Arc::new(ChannelCommand{}),
     ];
     let mut alias_to_cmd = HashMap::new();

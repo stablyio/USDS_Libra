@@ -35,36 +35,36 @@ lazy_static! {
 }
 
 
-/// Major command for hack operations.
-pub struct HackCommand {}
+/// Major command for usds operations.
+pub struct USDSCommand {}
 
-impl Command for HackCommand {
+impl Command for USDSCommand {
     fn get_aliases(&self) -> Vec<&'static str> {
-        vec!["hack", "k"]
+        vec!["usds", "k"]
     }
     fn get_description(&self) -> &'static str {
-        "Hack operations"
+        "USDS operations"
     }
     fn execute(&self, client: &mut ClientProxy, params: &[&str]) {
         let commands: Vec<Box<dyn Command>> = vec![
-            Box::new(HackCommandExecuteModule {}),
-            Box::new(HackCommandGetLatestAccountState {}),
-            Box::new(HackCommandETokenIssue {}),
-            Box::new(HackCommandETokenInit {}),
-            Box::new(HackCommandETokenMint {}),
-            Box::new(HackCommandETokenTransfer {}),
-            Box::new(HackCommandETokenSell {}),
-            Box::new(HackCommandETokenBuy {}),
-            Box::new(HackCommandWriteSet {}),
+            Box::new(USDSCommandExecuteModule {}),
+            Box::new(USDSCommandGetLatestAccountState {}),
+            Box::new(USDSCommandETokenIssue {}),
+            Box::new(USDSCommandETokenInit {}),
+            Box::new(USDSCommandETokenMint {}),
+            Box::new(USDSCommandETokenTransfer {}),
+            Box::new(USDSCommandETokenSell {}),
+            Box::new(USDSCommandETokenBuy {}),
+            Box::new(USDSCommandWriteSet {}),
         ];
 
         subcommand_execute(&params[0], commands, client, &params[1..]);
     }
 }
 
-pub struct HackCommandExecuteModule {}
+pub struct USDSCommandExecuteModule {}
 
-impl Command for HackCommandExecuteModule {
+impl Command for USDSCommandExecuteModule {
     fn get_aliases(&self) -> Vec<&'static str> {
         vec!["execute", "exe"]
     }
@@ -101,9 +101,9 @@ impl Command for HackCommandExecuteModule {
     }
 }
 
-pub struct HackCommandETokenIssue {}
+pub struct USDSCommandETokenIssue {}
 
-impl Command for HackCommandETokenIssue {
+impl Command for USDSCommandETokenIssue {
     fn get_aliases(&self) -> Vec<&'static str> {
         vec!["etoken_issue", "issue"]
     }
@@ -138,9 +138,9 @@ impl Command for HackCommandETokenIssue {
 }
 
 // Init an account for accept etoken
-pub struct HackCommandETokenInit {}
+pub struct USDSCommandETokenInit {}
 
-impl Command for HackCommandETokenInit {
+impl Command for USDSCommandETokenInit {
     fn get_aliases(&self) -> Vec<&'static str> {
         vec!["etoken_init", "init"]
     }
@@ -171,9 +171,9 @@ impl Command for HackCommandETokenInit {
 }
 
 // Mint etoken for an account
-pub struct HackCommandETokenMint {}
+pub struct USDSCommandETokenMint {}
 
-impl Command for HackCommandETokenMint {
+impl Command for USDSCommandETokenMint {
     fn get_aliases(&self) -> Vec<&'static str> {
         vec!["etoken_mint", "mint"]
     }
@@ -212,9 +212,9 @@ impl Command for HackCommandETokenMint {
 
 
 // Transfer etoken to an account
-pub struct HackCommandETokenTransfer {}
+pub struct USDSCommandETokenTransfer {}
 
-impl Command for HackCommandETokenTransfer {
+impl Command for USDSCommandETokenTransfer {
     fn get_aliases(&self) -> Vec<&'static str> {
         vec!["etoken_transfer", "transfer"]
     }
@@ -260,9 +260,9 @@ impl Command for HackCommandETokenTransfer {
 
 
 // Sell etoken and create an order
-pub struct HackCommandETokenSell {}
+pub struct USDSCommandETokenSell {}
 
-impl Command for HackCommandETokenSell {
+impl Command for USDSCommandETokenSell {
     fn get_aliases(&self) -> Vec<&'static str> {
         vec!["etoken_sell", "sell"]
     }
@@ -307,9 +307,9 @@ impl Command for HackCommandETokenSell {
 }
 
 // Buy etoken from a order address
-pub struct HackCommandETokenBuy {}
+pub struct USDSCommandETokenBuy {}
 
-impl Command for HackCommandETokenBuy {
+impl Command for USDSCommandETokenBuy {
     fn get_aliases(&self) -> Vec<&'static str> {
         vec!["etoken_buy", "buy"]
     }
@@ -455,9 +455,9 @@ fn create_transaction_program(program: &CompiledProgram, args: Vec<TransactionAr
 }
 
 /// Command to query latest account state from validator.
-pub struct HackCommandGetLatestAccountState {}
+pub struct USDSCommandGetLatestAccountState {}
 
-impl HackCommandGetLatestAccountState {
+impl USDSCommandGetLatestAccountState {
     fn do_execute(&self, client: &mut ClientProxy, params: &[&str]) -> Result<()> {
         println!(">> Getting latest account state");
         match client.get_latest_account_state(&params) {
@@ -506,7 +506,7 @@ impl HackCommandGetLatestAccountState {
 const CODE_TAG: u8 = 0;
 const RESOURCE_TAG: u8 = 1;
 
-impl Command for HackCommandGetLatestAccountState {
+impl Command for USDSCommandGetLatestAccountState {
     fn get_aliases(&self) -> Vec<&'static str> {
         vec!["account_state", "as"]
     }
@@ -527,9 +527,9 @@ impl Command for HackCommandGetLatestAccountState {
 }
 
 
-pub struct HackCommandWriteSet {}
+pub struct USDSCommandWriteSet {}
 
-impl HackCommandWriteSet {
+impl USDSCommandWriteSet {
     fn do_execute(&self, client: &mut ClientProxy, params: &[&str]) -> Result<()> {
         let signer_account_address =
             client.get_account_address_from_parameter(params[1])?;
@@ -548,7 +548,7 @@ impl HackCommandWriteSet {
     }
 }
 
-impl Command for HackCommandWriteSet {
+impl Command for USDSCommandWriteSet {
     fn get_aliases(&self) -> Vec<&'static str> {
         vec!["write_set", "ws"]
     }
@@ -577,7 +577,7 @@ impl Command for HackCommandWriteSet {
 mod tests {
     use types::account_address::AccountAddress;
 
-    use crate::hack_commands::*;
+    use crate::usds_commands::*;
     use crate::client_proxy::*;
     use vm::file_format::CompiledProgram;
     use bytecode_verifier::VerifiedModule;

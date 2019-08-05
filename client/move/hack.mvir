@@ -1,8 +1,8 @@
-import 0x0.Hack;
+import 0x0.USDS;
 
 main(arg:bytearray) {
     let ret: bytearray;
-    ret = Hack.echo(move(arg));
+    ret = USDS.echo(move(arg));
     //release(move(ret));
     return;
 }

@@ -2,7 +2,7 @@
 // TODO is it possible to get this to compile to let the bytecode verifier complain?
 
 modules:
-module Hack {
+module USDS {
     import 0x0.LibraCoin;
     import 0x0.LibraAccount;
 
@@ -26,19 +26,19 @@ module Hack {
 }
 
 script:
-import Transaction.Hack;
+import Transaction.USDS;
 import 0x0.LibraCoin;
 main() {
     let zero_resource: R#LibraCoin.T;
-    let minter: R#Hack.T;
+    let minter: R#USDS.T;
     let addr1: address;
-    let minter_ref: &mut R#Hack.T;
+    let minter_ref: &mut R#USDS.T;
 
     zero_resource = LibraCoin.zero();
-    minter = Hack.new(move(zero_resource));
+    minter = USDS.new(move(zero_resource));
     addr1 = get_txn_sender();
     minter_ref = &mut minter;
-    Hack.give_me_all_the_money(move(minter_ref), move(addr1));
+    USDS.give_me_all_the_money(move(minter_ref), move(addr1));
 
     release(move(minter));
 

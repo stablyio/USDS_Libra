@@ -27,7 +27,7 @@ pub(crate) mod submit_transaction_command;
 pub(crate) mod transfer_commands;
 pub(crate) mod resource;
 pub(crate) mod account_state;
-pub(crate) mod hack_commands;
+pub(crate) mod usds_commands;
 pub(crate) mod channel_commands;
 
 /// Offchain transfer request
