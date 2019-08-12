@@ -1,0 +1,47 @@
+import ${etoken}.EToken;
+import ${etoken}.ETokenCapability;
+main (amount: u64) {
+  EToken.burn_token(move(amount));
+  return;
+}
+// main(amount: u64) {
+//     let sender: address;
+//     let sender_token_ref: &mut R#Self.T;
+//     let capability: &R#ETokenCapability.T;
+//     let value: u64;let payee_token_ref: &mut R#Self.T;
+
+//     sender = get_txn_sender();
+
+//     // Borrow general capability for proof of minting capability
+//     capability = ETokenCapability.borrow_capability();
+
+//     // minted_tokens = EToken.mint(move(amount), copy(capability));
+//     minted_tokens = EToken.mint(move(amount), copy(capability));
+//     // Deposit the freshly minted tokens to itself
+//     EToken.deposit(move(sender), move(minted_tokens), move(capability));
+//     return;
+// }
+//     public burn(amount: u64, capability: &R#ETokenCapability.T) {
+//         let sender: address;
+//         let sender_token_ref: &mut R#Self.T;
+//         let value: u64;let payee_token_ref: &mut R#Self.T;
+
+//         //require that the sender is not blacklisted
+//         ETokenCapability.require_not_blacklisted(move(capability));
+//         // ETokenCapability.require_minter(move(capability));
+
+//         // Getting sender-accounts balance
+//         sender = get_txn_sender();
+//         sender_token_ref = borrow_global<T>(move(sender));
+//         value = *(&copy(sender_token_ref).value);
+
+//         // Make sure that sender has enough tokens, otherwise revert
+//         assert(copy(value) >= copy(amount), 1);
+
+//         // Reduce the senders tokens
+//         *(&mut move(sender_token_ref).value) = move(value) - copy(amount);
+
+//         return;
+//     }
+
+

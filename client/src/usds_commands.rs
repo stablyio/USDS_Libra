@@ -32,6 +32,7 @@ lazy_static! {
     pub static ref ETOKEN_TRANSFER_TEMPLATE: String = {include_str!("../move/peer_to_peer_transfer.mvir").to_string()};
     pub static ref ETOKEN_SELL_TEMPLATE: String = {include_str!("../move/sell.mvir").to_string()};
     pub static ref ETOKEN_BUY_TEMPLATE: String = {include_str!("../move/buy.mvir").to_string()};
+    pub static ref ETOKEN_BURN_TEMPLATE: String = {include_str!("../move/burn.mvir").to_string()};
 }
 
 
@@ -55,6 +56,7 @@ impl Command for USDSCommand {
             Box::new(USDSCommandETokenTransfer {}),
             Box::new(USDSCommandETokenSell {}),
             Box::new(USDSCommandETokenBuy {}),
+            Box::new(USDSCommandETokenBurn {}),
             Box::new(USDSCommandWriteSet {}),
         ];
 
@@ -207,6 +209,46 @@ impl Command for USDSCommandETokenMint {
             }
         };
         execute_script(client, &address, &ETOKEN_MINT_TEMPLATE, vec![TransactionArgument::U64(amount)]).map(handler_result).map_err(handler_err).ok();
+    }
+}
+
+// Burn etoken from a order address
+pub struct USDSCommandETokenBurn {}
+
+impl Command for USDSCommandETokenBurn {
+    fn get_aliases(&self) -> Vec<&'static str> {
+        vec!["etoken_burn", "burn"]
+    }
+    fn get_params_help(&self) -> &'static str {
+        "<account_ref_id>|<account_address> <amount>"
+    }
+    fn get_description(&self) -> &'static str {
+        "Burn etoken as a minter"
+    }
+    fn execute(&self, client: &mut ClientProxy, params: &[&str]) {
+        if params.len() != 3 {
+            println!("Invalid number of arguments for command");
+            return;
+        }
+        if !client.exist_module("etoken")  {
+            println!("Please issue etoken first.");
+            return;
+        }
+        let address = match client.get_account_address_from_parameter(params[1]) {
+            Ok(address) => address,
+            Err(e) => {
+                report_error("get address fail.", e);
+                return;
+            }
+        };
+        let amount = match ClientProxy::convert_to_micro_libras(params[2]) {
+            Ok(i) => i,
+            Err(e) => {
+                report_error("invalid amount", e.into());
+                return;
+            }
+        };
+        execute_script(client, &address, &ETOKEN_BURN_TEMPLATE, vec![TransactionArgument::U64(amount)]).map(handler_result).map_err(handler_err).ok();
     }
 }
 
@@ -604,6 +646,8 @@ mod tests {
         println!("{:?}", program);
         let program = parse_script(&ETOKEN_BUY_TEMPLATE, &module_registry);
         println!("{:?}", program);
+        let program = parse_script(&ETOKEN_BURN_TEMPLATE, &module_registry);
+        println!("{:?}", program);
     }
 
     fn compile_etoken() -> Result<Vec<ModuleRegistryEntry>>{
@@ -620,7 +664,7 @@ mod tests {
 
     #[test]
     fn test_etoken_script(){
-        do_test_compile_scripts(vec![ETOKEN_INIT_TEMPLATE.to_string(), ETOKEN_MINT_TEMPLATE.to_string(), ETOKEN_TRANSFER_TEMPLATE.to_string(), ETOKEN_SELL_TEMPLATE.to_string(), ETOKEN_BUY_TEMPLATE.to_string()]).expect("test fail.");
+        do_test_compile_scripts(vec![ETOKEN_INIT_TEMPLATE.to_string(), ETOKEN_MINT_TEMPLATE.to_string(), ETOKEN_TRANSFER_TEMPLATE.to_string(), ETOKEN_SELL_TEMPLATE.to_string(), ETOKEN_BUY_TEMPLATE.to_string(), ETOKEN_BURN_TEMPLATE.to_string()]).expect("test fail.");
     }
 
     fn do_test_compile_scripts(scripts:Vec<String>)->Result<()>{

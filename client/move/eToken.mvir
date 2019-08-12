@@ -191,25 +191,31 @@ module EToken {
 
         return move(token_value);
     }
-
-    // Deposit owned tokens to an payee's address, and destroy the tokens to deposit,
+    // Burns owned tokens
     // Reverts if user is blacklisted.
-    public burn(payee: address, to_deposit: R#Self.T, capability: &R#ETokenCapability.T) {
-        let payee_token_ref: &mut R#Self.T;
-        let payee_token_value: u64;
-        let to_deposit_value: u64;
+    public burn(amount: u64, capability: &R#ETokenCapability.T) {
+        let sender: address;
+        let sender_token_ref: &mut R#Self.T;
+        let value: u64;let payee_token_ref: &mut R#Self.T;
 
-        //only minter of the token is allowed to burn
-        ETokenCapability.require_minter(move(capability));
+        //require that the sender is not blacklisted
+        ETokenCapability.require_not_blacklisted(move(capability));
+        // ETokenCapability.require_minter(move(capability));
 
-        // payee_token_ref = borrow_global<T>(move(payee));
-        // payee_token_value = *(&copy(payee_token_ref).value);
+        // Getting sender-accounts balance
+        sender = get_txn_sender();
+        sender_token_ref = borrow_global<T>(move(sender));
+        value = *(&copy(sender_token_ref).value);
 
-        // destroy to_deposit tokens
-        move(to_deposit);
+        // Make sure that sender has enough tokens, otherwise revert
+        assert(copy(value) >= copy(amount), 1);
+
+        // Reduce the senders tokens
+        *(&mut move(sender_token_ref).value) = move(value) - copy(amount);
 
         return;
     }
+
     // Deposit owned tokens to an payee's address, and destroy the tokens to deposit,
     // Reverts if user is blacklisted.
     public deposit(payee: address, to_deposit: R#Self.T, capability: &R#ETokenCapability.T) {
@@ -251,6 +257,14 @@ module EToken {
         // Split the senders token and return the amount specified
         *(&mut move(sender_token_ref).value) = move(value) - copy(amount);
         return T{ value: move(amount) };
+    }
+    //Scripts for cli
+    public burn_token(token_amount: u64) {
+         let capability: &R#ETokenCapability.T;
+
+         capability = ETokenCapability.borrow_capability();
+         Self.burn(move(token_amount), move(capability));
+         return;
     }
 
     public pay_from_sender(payee: address, amount: u64) {

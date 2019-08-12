@@ -1,0 +1,6 @@
+import ${etoken}.EToken;
+import ${etoken}.ETokenCapability;
+main (amount: u64) {
+  EToken.burn_token(move(amount));
+  return;
+}
